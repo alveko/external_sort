@@ -1,0 +1,30 @@
+;; This buffer is for notes you don't want to save, and for Lisp evaluation.
+;; If you want to create a file, visit that file with C-x C-f,
+;; then enter the text in that file's own buffer.
+
+./external_sort -a generate --ssize 10000000 --nstreams 8 --nmerge 2
+=> 3
+./external_sort -a generate --ssize 10000000 --nstreams 16 --nmerge 2
+=> 7.7, 8.1
+./external_sort -a generate --ssize 10000000 --nstreams 32 --nmerge 2
+=> 19.2, 19.3
+./external_sort -a generate --ssize 10000000 --nstreams 64 --nmerge 2
+=> 47.1, 47.03
+
+linear streams
+./external_sort -a generate --ssize 10000000 --nstreams 8 --nmerge 8
+=> 3.8
+./external_sort -a generate --ssize 10000000 --nstreams 16 --nmerge 16
+=> 12.1, 10.1, 10.1
+./external_sort -a generate --ssize 10000000 --nstreams 32 --nmerge 32
+=> 34.9, 34.9, 34.6
+
+heap streams
+./external_sort -a generate --ssize 10000000 --nstreams 8 --nmerge 8
+=> 4.2
+./external_sort -a generate --ssize 10000000 --nstreams 16 --nmerge 16
+=> 9.8
+./external_sort -a generate --ssize 10000000 --nstreams 32 --nmerge 32
+=> 23.2, 23.2, 23.1
+./external_sort -a generate --ssize 10000000 --nstreams 64 --nmerge 64
+=> 53.5, 54.3, 53.01
