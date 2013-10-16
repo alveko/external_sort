@@ -10,25 +10,25 @@
 #include "logging.hpp"
 #include "block_types.hpp"
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-class BlockInputStream : public InputPolicy,
-                         public MemoryPolicy
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+class BlockInputStream : public ReadPolicy, public MemoryPolicy
 {
   public:
-    using BlockPtr = typename BlockTraits<Block>::BlockPtr;
-    using Iterator = typename BlockTraits<Block>::Iterator;
+    using BlockType = Block;
+    using BlockPtr  = typename BlockTraits<Block>::BlockPtr;
+    using Iterator  = typename BlockTraits<Block>::Iterator;
     using ValueType = typename BlockTraits<Block>::ValueType;
-    using QueueType = std::queue<BlockPtr>;
-
-    BlockInputStream();
-    ~BlockInputStream();
 
     void Open();
     void Close();
     bool Empty();
 
-    ValueType& Front();
+    ValueType& Front();     // get a single value
+    BlockPtr FrontBlock();  // get entire block
+    BlockPtr ReadBlock();   // read a block right from the file
+
     void Pop();
+    void PopBlock();
 
   private:
     void InputLoop();
@@ -39,118 +39,134 @@ class BlockInputStream : public InputPolicy,
 
     mutable std::condition_variable cv_;
     mutable std::mutex mtx_;
-    QueueType blocks_queue_;
+    std::queue<BlockPtr> blocks_queue_;
 
     BlockPtr block_ = {nullptr};
     Iterator block_iter_;
 
     std::thread tinput_;
-    std::atomic<bool> is_over_ = {false};
-    std::atomic<bool> opened_ = {false};
+    std::atomic<bool> empty_ = {false};
 };
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-BlockInputStream<Block, InputPolicy, MemoryPolicy>::BlockInputStream()
-{
-}
-
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-BlockInputStream<Block, InputPolicy, MemoryPolicy>::~BlockInputStream()
-{
-    if (opened_) {
-        Close();
-    }
-}
-
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-void BlockInputStream<Block, InputPolicy, MemoryPolicy>::Open()
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+void BlockInputStream<Block, ReadPolicy, MemoryPolicy>::Open()
 {
     TRACEX_METHOD();
-    InputPolicy::Open();
-    is_over_ = false;
+    ReadPolicy::Open();
+    empty_ = false;
     tinput_ = std::thread(&BlockInputStream::InputLoop, this);
-    opened_ = true;
 }
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-void BlockInputStream<Block, InputPolicy, MemoryPolicy>::Close()
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+void BlockInputStream<Block, ReadPolicy, MemoryPolicy>::Close()
 {
     TRACEX_METHOD();
-    InputPolicy::Close();
+    ReadPolicy::Close();
     tinput_.join();
-    opened_ = false;
 }
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-bool BlockInputStream<Block, InputPolicy, MemoryPolicy>::Empty()
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+bool BlockInputStream<Block, ReadPolicy, MemoryPolicy>::Empty()
 {
     if (!block_) {
         WaitForBlock();
     }
-    return is_over_ && !block_;
+    return empty_ && !block_;
 }
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-auto BlockInputStream<Block, InputPolicy, MemoryPolicy>::Front() -> ValueType&
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+auto BlockInputStream<Block, ReadPolicy, MemoryPolicy>::Front()
+    -> ValueType&
 {
-    // Empty() must be called first
+    // Empty() must be called first!
 
     return *block_iter_;
 }
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-void BlockInputStream<Block, InputPolicy, MemoryPolicy>::Pop()
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+void BlockInputStream<Block, ReadPolicy, MemoryPolicy>::Pop()
 {
-    // Empty() must be called first
+    // Empty() must be called first!
 
     ++block_iter_;
     if (block_iter_ == block_->end()) {
         // block is over, free it
-        MemoryPolicy::Free(block_);
-        block_ = nullptr;
+        auto tmp = block_;
+        PopBlock();
+        MemoryPolicy::Free(tmp);
     }
 }
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-void BlockInputStream<Block, InputPolicy, MemoryPolicy>::InputLoop()
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+auto BlockInputStream<Block, ReadPolicy, MemoryPolicy>::FrontBlock()
+    -> BlockPtr
+{
+    TRACEX(("block %014p front block") % BlockTraits<Block>::RawPtr(block_));
+    return block_;
+}
+
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+void BlockInputStream<Block, ReadPolicy, MemoryPolicy>::PopBlock()
+{
+    // No MemoryPolicy::Free! The caller has to free the block
+    block_ = nullptr;
+}
+
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+void BlockInputStream<Block, ReadPolicy, MemoryPolicy>::InputLoop()
 {
     TRACEX_METHOD();
 
-    while (!InputPolicy::IsOver()) {
-        // allocate a new block; supposed to be a blocking call!
-        // waits for chunks to be released if needed
-        BlockPtr block = MemoryPolicy::Allocate();
-
-        // read (fill in) the block from the input source
-        InputPolicy::Read(block);
+    while (!ReadPolicy::Empty()) {
+        // Allocate and read the block from the file (blocking!)
+        BlockPtr block = ReadBlock();
 
         // push the block to the queue
-        if (!block->empty()) {
+        if (block) {
             std::unique_lock<std::mutex> lck(mtx_);
             blocks_queue_.push(block);
             TRACEX(("block %014p => input queue (%d)")
                    % BlockTraits<Block>::RawPtr(block) % blocks_queue_.size());
             cv_.notify_one();
-        } else {
-            TRACEX(("block %014p is empty, ignoring")
-                   % BlockTraits<Block>::RawPtr(block));
-            MemoryPolicy::Free(block);
         }
     }
 
-    // is_over_ needed, since InputPolicy::IsOver() becomes true before
+    // empty_ needed, since ReadPolicy::Empty() becomes true before
     // the last block pushed into the queue
-    // (hence it can be intercepted by another thread)
+    // (hence it can be intercepted by the other thread)
     std::unique_lock<std::mutex> lck(mtx_);
-    is_over_ = true;
+    empty_ = true;
     cv_.notify_one();
 }
 
-template <typename Block, typename InputPolicy, typename MemoryPolicy>
-void BlockInputStream<Block, InputPolicy, MemoryPolicy>::WaitForBlock()
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+auto BlockInputStream<Block, ReadPolicy, MemoryPolicy>::ReadBlock()
+    -> BlockPtr
 {
+    // allocate a new block; supposed to be a blocking call!
+    // waits for chunks to be released if needed
+    BlockPtr block = MemoryPolicy::Allocate();
+
+    // read (fill in) the block from the input source
+    ReadPolicy::Read(block);
+    if (block->empty()) {
+        // this happens when the previous block ended right before EOF
+        TRACEX(("block %014p is empty, ignoring")
+               % BlockTraits<Block>::RawPtr(block));
+        MemoryPolicy::Free(block);
+        block = nullptr;
+    }
+
+    return block;
+}
+
+template <typename Block, typename ReadPolicy, typename MemoryPolicy>
+void BlockInputStream<Block, ReadPolicy, MemoryPolicy>::WaitForBlock()
+{
+    TRACEX_METHOD();
+
     std::unique_lock<std::mutex> lck(mtx_);
-    while (blocks_queue_.empty() && !is_over_) {
+    while (blocks_queue_.empty() && !empty_) {
         cv_.wait(lck);
     }
 

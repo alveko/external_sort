@@ -13,9 +13,7 @@ LDFLAGS	= \
 	-lboost_thread
 
 EXE	= external_sort
-SRC	= \
-	external_sort.cc \
-	logging/logging.cc
+SRC	= external_sort.cc logging/logging.cc
 
 OBJ	= $(SRC:.cc=.o)
 

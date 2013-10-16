@@ -1,5 +1,5 @@
-#ifndef BLOCK_INFILE_HPP
-#define BLOCK_INFILE_HPP
+#ifndef BLOCK_FILE_READ_HPP
+#define BLOCK_FILE_READ_HPP
 
 #include <string>
 #include <fstream>
@@ -8,10 +8,10 @@
 #include "block_types.hpp"
 
 /// ----------------------------------------------------------------------------
-/// BlockInFilePolicy
+/// BlockFileReadPolicy
 
 template <typename Block>
-class BlockInFilePolicy
+class BlockFileReadPolicy
 {
   public:
     using BlockPtr = typename BlockTraits<Block>::BlockPtr;
@@ -21,7 +21,7 @@ class BlockInFilePolicy
     void Open();
     void Close();
     void Read(BlockPtr& block);
-    bool IsOver() const;
+    bool Empty() const;
 
     /// Set/get properties
     void set_input_filename(const std::string& ifn) { input_filename_ = ifn; }
@@ -33,7 +33,7 @@ class BlockInFilePolicy
     void FileClose();
 
   private:
-    TRACEX_NAME("BlockInFilePolicy");
+    TRACEX_NAME("BlockFileReadPolicy");
 
     size_t block_cnt_ = 0;
     std::string input_filename_;
@@ -44,28 +44,28 @@ class BlockInFilePolicy
 /// Policy interface methods
 
 template <typename Block>
-void BlockInFilePolicy<Block>::Open()
+void BlockFileReadPolicy<Block>::Open()
 {
     TRACEX_METHOD();
     FileOpen();
 }
 
 template <typename Block>
-void BlockInFilePolicy<Block>::Close()
+void BlockFileReadPolicy<Block>::Close()
 {
     TRACEX_METHOD();
     FileClose();
 }
 
 template <typename Block>
-void BlockInFilePolicy<Block>::Read(BlockPtr& block)
+void BlockFileReadPolicy<Block>::Read(BlockPtr& block)
 {
     FileRead(block);
     block_cnt_++;
 }
 
 template <typename Block>
-bool BlockInFilePolicy<Block>::IsOver() const
+bool BlockFileReadPolicy<Block>::Empty() const
 {
     return !(ifs_.is_open() && ifs_.good());
 }
@@ -74,9 +74,10 @@ bool BlockInFilePolicy<Block>::IsOver() const
 /// File operations
 
 template <typename Block>
-void BlockInFilePolicy<Block>::FileOpen()
+void BlockFileReadPolicy<Block>::FileOpen()
 {
-    LOG_INF(("opening r %s") % input_filename_);
+    LOG_INF(("opening file r %s") % input_filename_);
+    TRACEX(("input file %s") % input_filename_);
     ifs_.open(input_filename_, std::ifstream::in | std::ifstream::binary);
     if (!ifs_) {
         LOG_ERR(("Failed to open input file: %s") % input_filename_);
@@ -84,7 +85,7 @@ void BlockInFilePolicy<Block>::FileOpen()
 }
 
 template <typename Block>
-void BlockInFilePolicy<Block>::FileRead(BlockPtr& block)
+void BlockFileReadPolicy<Block>::FileRead(BlockPtr& block)
 {
     block->resize(block->capacity());
     std::streamsize bsize = block->size() * sizeof(ValueType);
@@ -95,11 +96,11 @@ void BlockInFilePolicy<Block>::FileRead(BlockPtr& block)
     }
     TRACEX(("block %014p <= file (%s), is_over = %s, size = %s")
            % BlockTraits<Block>::RawPtr(block)
-           % block_cnt_ % IsOver() % block->size());
+           % block_cnt_ % Empty() % block->size());
 }
 
 template <typename Block>
-void BlockInFilePolicy<Block>::FileClose()
+void BlockFileReadPolicy<Block>::FileClose()
 {
     ifs_.close();
 }

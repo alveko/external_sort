@@ -1,5 +1,5 @@
-#ifndef BLOCK_OUTFILE_HPP
-#define BLOCK_OUTFILE_HPP
+#ifndef BLOCK_FILE_WRITE_HPP
+#define BLOCK_FILE_WRITE_HPP
 
 #include <string>
 #include <queue>
@@ -9,10 +9,10 @@
 #include "block_types.hpp"
 
 /// ----------------------------------------------------------------------------
-/// BlockOutFilePolicy
+/// BlockFileWritePolicy
 
 template <typename Block>
-class BlockOutFilePolicy
+class BlockFileWritePolicy
 {
   public:
     using BlockPtr = typename BlockTraits<Block>::BlockPtr;
@@ -44,7 +44,7 @@ class BlockOutFilePolicy
     void FileClose();
 
   private:
-    TRACEX_NAME("BlockOutFilePolicy");
+    TRACEX_NAME("BlockFileWritePolicy");
 
     size_t block_cnt_ = 0;
     size_t block_cnt_file_ = 0;
@@ -58,21 +58,21 @@ class BlockOutFilePolicy
 /// Policy interface methods
 
 template <typename Block>
-void BlockOutFilePolicy<Block>::Open()
+void BlockFileWritePolicy<Block>::Open()
 {
     TRACEX_METHOD();
     FileOpen();
 }
 
 template <typename Block>
-void BlockOutFilePolicy<Block>::Close()
+void BlockFileWritePolicy<Block>::Close()
 {
     TRACEX_METHOD();
     FileClose();
 }
 
 template <typename Block>
-void BlockOutFilePolicy<Block>::Write(const BlockPtr& block)
+void BlockFileWritePolicy<Block>::Write(const BlockPtr& block)
 {
     // egnore empty blocks
     if (!block || block->empty()) {
@@ -95,7 +95,7 @@ void BlockOutFilePolicy<Block>::Write(const BlockPtr& block)
 /// File operations
 
 template <typename Block>
-void BlockOutFilePolicy<Block>::FileOpen()
+void BlockFileWritePolicy<Block>::FileOpen()
 {
     std::stringstream filename;
     filename << output_filename_;
@@ -103,14 +103,15 @@ void BlockOutFilePolicy<Block>::FileOpen()
         filename << (boost::format(".%02d") %
                      (1 + block_cnt_ / output_blocks_per_file_));
     }
-    LOG_INF(("opening w %s") % filename.str());
+    LOG_INF(("opening file w %s") % filename.str());
+    TRACEX(("output file %s") % filename.str());
     ofs_.open(filename.str(), std::ofstream::out | std::ofstream::binary);
     output_filenames_.push(filename.str());
     block_cnt_file_ = 0;
 }
 
 template <typename Block>
-void BlockOutFilePolicy<Block>::FileWrite(const BlockPtr& block)
+void BlockFileWritePolicy<Block>::FileWrite(const BlockPtr& block)
 {
     ofs_.write((const char*)block->data(), block->size() * sizeof(ValueType));
     TRACEX(("block %014p => file (%s/%s), bsize = %d")
@@ -119,7 +120,7 @@ void BlockOutFilePolicy<Block>::FileWrite(const BlockPtr& block)
 }
 
 template <typename Block>
-void BlockOutFilePolicy<Block>::FileClose()
+void BlockFileWritePolicy<Block>::FileClose()
 {
     ofs_.close();
 }

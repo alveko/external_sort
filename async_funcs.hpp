@@ -11,18 +11,14 @@ template <typename ResultType>
 class AsyncFuncs
 {
   public:
-    AsyncFuncs();
+    template <class Fn, class... Args>
+    void Async(Fn&& fn, Args&&... args);
+    ResultType GetAny();
 
     bool Empty() const { return All() == 0; }
     size_t All() const { return Ready() + Running(); }
-
     size_t Ready() const;
     size_t Running() const;
-
-    template <class Fn, class... Args>
-    void Async(Fn&& fn, Args&&... args);
-
-    ResultType GetAny();
 
   private:
     template <class Fn, class... Args>
@@ -34,15 +30,9 @@ class AsyncFuncs
     mutable std::mutex mtx_;
     std::condition_variable cv_;
 
-    std::atomic<size_t> funcs_running_;
+    std::atomic<size_t> funcs_running_ = {0};
     std::list<ResultType> funcs_ready_;
 };
-
-template <typename ResultType>
-AsyncFuncs<ResultType>::AsyncFuncs()
-    : funcs_running_(0)
-{
-}
 
 template <typename ResultType>
 size_t AsyncFuncs<ResultType>::Running() const

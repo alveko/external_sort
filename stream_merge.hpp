@@ -19,8 +19,9 @@ void copy_stream(InputStream* sin, OutputStream* sout)
 }
 
 // merges 2 streams
-template <typename InputStream, typename OutputStream>
-void merge_2streams(StreamSet<InputStream*>& sin, OutputStream* sout)
+template <typename InputStream, typename OutputStream, typename Comparator>
+void merge_2streams(StreamSet<InputStream*>& sin, OutputStream* sout,
+                    Comparator comp)
 {
     TRACE_FUNC();
     if (sin.size() != 2) {
@@ -34,7 +35,7 @@ void merge_2streams(StreamSet<InputStream*>& sin, OutputStream* sout)
     InputStream* smin = s1;
 
     for (;;) {
-        smin = (s1->Front() < s2->Front()) ? s1 : s2;
+        smin = comp(s1->Front(), s2->Front()) ? s1 : s2;
         sout->Push(smin->Front());
         smin->Pop();
         if (smin->Empty()) {
@@ -46,8 +47,9 @@ void merge_2streams(StreamSet<InputStream*>& sin, OutputStream* sout)
 }
 
 // merges 3 streams
-template <typename InputStream, typename OutputStream>
-void merge_3streams(StreamSet<InputStream*>& sin, OutputStream* sout)
+template <typename InputStream, typename OutputStream, typename Comparator>
+void merge_3streams(StreamSet<InputStream*>& sin, OutputStream* sout,
+                    Comparator comp)
 {
     TRACE_FUNC();
     if (sin.size() != 3) {
@@ -62,10 +64,10 @@ void merge_3streams(StreamSet<InputStream*>& sin, OutputStream* sout)
     InputStream* smin = s1;
 
     for (;;) {
-        if (s1->Front() < s2->Front()) {
-            smin = (s1->Front() < s3->Front()) ? s1 : s3;
+        if (comp(s1->Front(),s2->Front())) {
+            smin = comp(s1->Front(), s3->Front()) ? s1 : s3;
         } else {
-            smin = (s2->Front() < s3->Front()) ? s2 : s3;
+            smin = comp(s2->Front(), s3->Front()) ? s2 : s3;
         }
         sout->Push(smin->Front());
         smin->Pop();
@@ -74,12 +76,13 @@ void merge_3streams(StreamSet<InputStream*>& sin, OutputStream* sout)
             break;
         }
     }
-    merge_2streams(sin, sout);
+    merge_2streams(sin, sout, comp);
 }
 
 // merges 4 streams
-template <typename InputStream, typename OutputStream>
-void merge_4streams(StreamSet<InputStream*>& sin, OutputStream* sout)
+template <typename InputStream, typename OutputStream, typename Comparator>
+void merge_4streams(StreamSet<InputStream*>& sin, OutputStream* sout,
+                    Comparator comp)
 {
     TRACE_FUNC();
     if (sin.size() != 4) {
@@ -95,16 +98,16 @@ void merge_4streams(StreamSet<InputStream*>& sin, OutputStream* sout)
     InputStream* smin = s1;
 
     for (;;) {
-        if (s1->Front() < s2->Front()) {
-            if (s3->Front() < s4->Front())
-                smin = (s1->Front() < s3->Front()) ? s1 : s3;
+        if (comp(s1->Front(), s2->Front())) {
+            if (comp(s3->Front(), s4->Front()))
+                smin = comp(s1->Front(), s3->Front()) ? s1 : s3;
             else
-                smin = (s1->Front() < s4->Front()) ? s1 : s4;
+                smin = comp(s1->Front(), s4->Front()) ? s1 : s4;
         } else {
-            if (s3->Front() < s4->Front())
-                smin = (s2->Front() < s3->Front()) ? s2 : s3;
+            if (comp(s3->Front(), s4->Front()))
+                smin = comp(s2->Front(), s3->Front()) ? s2 : s3;
             else
-                smin = (s2->Front() < s4->Front()) ? s2 : s4;
+                smin = comp(s2->Front(), s4->Front()) ? s2 : s4;
         }
         sout->Push(smin->Front());
         smin->Pop();
@@ -113,11 +116,12 @@ void merge_4streams(StreamSet<InputStream*>& sin, OutputStream* sout)
             break;
         }
     }
-    merge_3streams(sin, sout);
+    merge_3streams(sin, sout, comp);
 }
 
-template <typename InputStream, typename OutputStream>
-void merge_nstreams(StreamSet<InputStream*>& sin, OutputStream* sout)
+template <typename InputStream, typename OutputStream, typename Comparator>
+void merge_nstreams(StreamSet<InputStream*>& sin, OutputStream* sout,
+                    Comparator comp)
 {
     TRACE_FUNC();
     if (sin.size() <= 4) {
@@ -134,9 +138,8 @@ void merge_nstreams(StreamSet<InputStream*>& sin, OutputStream* sout)
             heap.push_back(s);
         }
     }
-    auto hcomp = [] (const InputStream*& s1,
-                     const InputStream*& s2) {
-        return s2->Front() < s1->Front();
+    auto hcomp = [ &comp ] (InputStream*& s1, InputStream*& s2) {
+        return comp(s2->Front(), s1->Front());
     };
     std::make_heap(heap.begin(), heap.end(), hcomp);
 
@@ -160,7 +163,7 @@ void merge_nstreams(StreamSet<InputStream*>& sin, OutputStream* sout)
             std::push_heap(heap.begin(), heap.end(), hcomp);
         }
     }
-    merge_4streams(sin, sout);
+    merge_4streams(sin, sout, comp);
 }
 
 template <typename InputStreamPtr, typename OutputStreamPtr>
@@ -177,6 +180,9 @@ OutputStreamPtr merge_streams(StreamSet<InputStreamPtr> sin,
     StreamSet<InputStream*> sinp;
     OutputStream* soutp = sout.get();
 
+    auto comp =
+        typename BlockTraits<typename InputStream::BlockType>::Comparator();
+
     for (const auto& s : sin) {
         s->Open();
         if (!s->Empty()) {
@@ -186,13 +192,13 @@ OutputStreamPtr merge_streams(StreamSet<InputStreamPtr> sin,
     sout->Open();
 
     if (sinp.size() > 4) {
-        //merge_nstreams(sinp, sout);
+        merge_nstreams(sinp, soutp, comp);
     } else if (sinp.size() == 4) {
-        merge_4streams(sinp, soutp);
+        merge_4streams(sinp, soutp, comp);
     } else if (sinp.size() == 3) {
-        merge_3streams(sinp, soutp);
+        merge_3streams(sinp, soutp, comp);
     } else if (sinp.size() == 2) {
-        merge_2streams(sinp, soutp);
+        merge_2streams(sinp, soutp, comp);
     } else if (sinp.size() == 1) {
         copy_stream(*sinp.begin(), soutp);
     } else {

@@ -10,27 +10,23 @@
 #include "logging.hpp"
 #include "block_types.hpp"
 
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-class BlockOutputStream : public OutputPolicy,
-                          public MemoryPolicy
+template <typename Block, typename WritePolicy, typename MemoryPolicy>
+class BlockOutputStream : public WritePolicy, public MemoryPolicy
 {
   public:
-    using BlockPtr = typename BlockTraits<Block>::BlockPtr;
-    using Iterator = typename BlockTraits<Block>::Iterator;
+    using BlockType = Block;
+    using BlockPtr  = typename BlockTraits<Block>::BlockPtr;
+    using Iterator  = typename BlockTraits<Block>::Iterator;
     using ValueType = typename BlockTraits<Block>::ValueType;
-    using QueueType = std::queue<BlockPtr>;
-
-    BlockOutputStream();
-    ~BlockOutputStream();
 
     void Open();
     void Close();
 
-    void Push(const ValueType& value);
+    void Push(const ValueType& value);  // push a single value
+    void PushBlock(BlockPtr block);     // push entire block
+    void WriteBlock(BlockPtr block);    // write a block directly into a file
 
   private:
-    void PushBlock();
-
     void OutputLoop();
 
   private:
@@ -38,54 +34,38 @@ class BlockOutputStream : public OutputPolicy,
 
     mutable std::condition_variable cv_;
     mutable std::mutex mtx_;
-    QueueType blocks_queue_;
+    std::queue<BlockPtr> blocks_queue_;
 
     BlockPtr block_ = {nullptr};
 
     std::thread toutput_;
     std::atomic<bool> stopped_ = {false};
-    std::atomic<bool> opened_ = {false};
 };
 
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::BlockOutputStream()
-{
-}
-
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::~BlockOutputStream()
-{
-    if (opened_) {
-        Close();
-    }
-}
-
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-void BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::Open()
+template <typename Block, typename WritePolicy, typename MemoryPolicy>
+void BlockOutputStream<Block, WritePolicy, MemoryPolicy>::Open()
 {
     TRACEX_METHOD();
 
-    OutputPolicy::Open();
+    WritePolicy::Open();
     stopped_ = false;
     toutput_ = std::thread(&BlockOutputStream::OutputLoop, this);
-    opened_ = true;
 }
 
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-void BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::Close()
+template <typename Block, typename WritePolicy, typename MemoryPolicy>
+void BlockOutputStream<Block, WritePolicy, MemoryPolicy>::Close()
 {
     TRACEX_METHOD();
 
-    PushBlock();
+    PushBlock(block_);
     stopped_ = true;
     cv_.notify_one();
     toutput_.join();
-    OutputPolicy::Close();
-    opened_ = false;
+    WritePolicy::Close();
 }
 
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-void BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::Push(
+template <typename Block, typename WritePolicy, typename MemoryPolicy>
+void BlockOutputStream<Block, WritePolicy, MemoryPolicy>::Push(
     const ValueType& value)
 {
     if (!block_) {
@@ -95,31 +75,30 @@ void BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::Push(
 
     if (block_->size() == block_->capacity()) {
         // block is full, push it to the output queue
-        PushBlock();
+        PushBlock(block_);
+        block_ = nullptr;
     }
 }
 
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-void BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::PushBlock()
+template <typename Block, typename WritePolicy, typename MemoryPolicy>
+void BlockOutputStream<Block, WritePolicy, MemoryPolicy>::PushBlock(
+    BlockPtr block)
 {
-    TRACEX_METHOD();
-
-    if (block_) {
+    if (block) {
         std::unique_lock<std::mutex> lck(mtx_);
-        blocks_queue_.push(block_);
+        blocks_queue_.push(block);
         TRACEX(("block %014p => output queue (%d)")
-               % BlockTraits<Block>::RawPtr(block_) % blocks_queue_.size());
-        block_ = nullptr;
+               % BlockTraits<Block>::RawPtr(block) % blocks_queue_.size());
         cv_.notify_one();
     }
 }
 
-template <typename Block, typename OutputPolicy, typename MemoryPolicy>
-void BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::OutputLoop()
+template <typename Block, typename WritePolicy, typename MemoryPolicy>
+void BlockOutputStream<Block, WritePolicy, MemoryPolicy>::OutputLoop()
 {
     TRACEX_METHOD();
-
-    while (!stopped_ || MemoryPolicy::Allocated()) {
+    for (;;) {
+    //while (!stopped_ || MemoryPolicy::Allocated()) {
 
         // wait for a block in the queue or the stop-flag
         std::unique_lock<std::mutex> lck(mtx_);
@@ -134,10 +113,21 @@ void BlockOutputStream<Block, OutputPolicy, MemoryPolicy>::OutputLoop()
                    % BlockTraits<Block>::RawPtr(block) % blocks_queue_.size());
             lck.unlock();
 
-            OutputPolicy::Write(block);
-            MemoryPolicy::Free(block);
+            WriteBlock(block);
+        } else if (stopped_) {
+            // nothing left in the queue and
+            // the stop flag is set => quit
+            break;
         }
     }
+}
+
+template <typename Block, typename WritePolicy, typename MemoryPolicy>
+void BlockOutputStream<Block, WritePolicy, MemoryPolicy>::WriteBlock(
+    BlockPtr block)
+{
+    WritePolicy::Write(block);
+    MemoryPolicy::Free(block);
 }
 
 #endif

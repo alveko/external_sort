@@ -19,17 +19,20 @@ struct BlockTraits<U32Block>
 {
     using Block = U32Block;
 
-    //using BlockPtr = std::shared_ptr<Block>;
-    //inline static void* RawPtr(BlockPtr block) { return block.get(); };
-    //inline static void DeletePtr(BlockPtr block) { };
-
     using BlockPtr = Block*;
     inline static void* RawPtr(BlockPtr block) { return block; };
     inline static void DeletePtr(BlockPtr block) { delete block; };
 
+    // Alternatively BlockPtr can be a shared pointer (but it's slower):
+    // using BlockPtr = std::shared_ptr<Block>;
+    // inline static void* RawPtr(BlockPtr block) { return block.get(); };
+    // inline static void DeletePtr(BlockPtr block) { };
+
     using Container = Block;
     using ValueType = typename Container::value_type;
     using Iterator  = typename Container::iterator;
+
+    using Comparator = std::less<ValueType>;
 };
 
 #endif
