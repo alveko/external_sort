@@ -9,8 +9,6 @@
 #include "logging.hpp"
 #include "block_types.hpp"
 
-#include <boost/lockfree/stack.hpp>
-
 template <typename Block>
 class BlockMemoryPolicy
 {
@@ -39,7 +37,6 @@ class BlockMemoryPolicy
         size_t blocks_cnt_;
         size_t blocks_allocated_;
     };
-
 
     inline size_t Allocated() const { return mem_pool_->Allocated(); }
     inline BlockPtr Allocate() { return mem_pool_->Allocate(); }
