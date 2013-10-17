@@ -90,7 +90,6 @@ std::queue<std::string> act_split(const po::variables_map& vm)
     log_params(vm, "srt");
     TIMER("Done in %t sec CPU, %w sec real\n");
 
-
     // create a pool of blocks shared between input and output streams
     auto mem_pool =
         std::make_shared<typename BlockMemoryPolicy<Block>::BlockPool>(
@@ -354,8 +353,6 @@ int main(int argc, char *argv[])
         ("chk.blocks",
          po::value<size_t>()->default_value(2),
          "       Number of blocks in memory");
-
-    //desc.add(gen_desc).add(srt_desc).add(mrg_desc).add(chk_desc);
 
     srt_desc.add(mrg_desc);
     gen_desc.add(srt_desc);
