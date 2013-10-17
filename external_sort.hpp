@@ -16,8 +16,6 @@ template <typename Block, typename OStreamPtr>
 OStreamPtr sort_and_write(typename BlockTraits<Block>::BlockPtr block,
                           OStreamPtr ostream)
 {
-    TRACE_FUNC();
-
     // sort the block
     std::sort(block->begin(), block->end(),
               typename BlockTraits<Block>::Comparator());
@@ -153,10 +151,10 @@ void check(IStrmFactory create_istream)
             istream->Pop();
             ++cnt;
         }
-        LOG_IMP(("min = %s, max = %s") % v_min % v_max);
-        LOG_IMP(("first = %s, last = %s") % v_first % v_prev);
+        LOG_IMP(("\tmin = %s, max = %s") % v_min % v_max);
+        LOG_IMP(("\tfirst = %s, last = %s") % v_first % v_prev);
     }
-    LOG_IMP(("Data checked: sorted = %s, elements = %s") % sorted % cnt);
+    LOG_IMP(("\tsorted = %s, elements = %s") % sorted % cnt);
     istream->Close();
 }
 

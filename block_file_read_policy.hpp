@@ -3,6 +3,7 @@
 
 #include <string>
 #include <fstream>
+#include <cstdio>
 
 #include "logging.hpp"
 #include "block_types.hpp"
@@ -27,6 +28,9 @@ class BlockFileReadPolicy
     void set_input_filename(const std::string& ifn) { input_filename_ = ifn; }
     const std::string& input_filename() const { return input_filename_; }
 
+    void set_input_rm_file(bool rm) { input_rm_file_ = rm; }
+    bool input_rm_file() const { return input_rm_file_; }
+
   private:
     void FileOpen();
     void FileRead(BlockPtr& block);
@@ -35,9 +39,10 @@ class BlockFileReadPolicy
   private:
     TRACEX_NAME("BlockFileReadPolicy");
 
-    size_t block_cnt_ = 0;
-    std::string input_filename_;
     std::ifstream ifs_;
+    std::string input_filename_;
+    bool input_rm_file_ = {false};
+    size_t block_cnt_ = 0;
 };
 
 /// ----------------------------------------------------------------------------
@@ -103,6 +108,11 @@ template <typename Block>
 void BlockFileReadPolicy<Block>::FileClose()
 {
     ifs_.close();
+    if (input_rm_file_) {
+        if (remove(input_filename_.c_str()) != 0) {
+            LOG_ERR(("Failed to remove file: %s") % input_filename_);
+        }
+    }
 }
 
 #endif

@@ -37,11 +37,12 @@ using OutputStreamPtr = std::shared_ptr<OutputStream>;
 #define ACT_MRG  (1 << 2)
 #define ACT_CHK  (1 << 3)
 
-#define DEF_TMP_DIR           "/tmp"
-#define DEF_GEN_OUT_FILENAME  "generated"
-#define DEF_SRT_OUT_FILENAME  "ph1_sorted"
-#define DEF_MRG_OUT_FILENAME  "ph2_merged"
-#define DEF_MRG_RES_SFX       ".sorted"
+#define DEF_TMP_DIR      "."
+#define DEF_SRT_TMP_SFX  "split"
+#define DEF_MRG_TMP_SFX  "merge"
+#define DEF_MRG_RES_SFX  ".sorted"
+#define DEF_GEN_OFILE    "generated"
+#define DEF_MRG_OFILE    DEF_GEN_OFILE DEF_MRG_RES_SFX
 
 namespace po = boost::program_options;
 
@@ -57,8 +58,10 @@ std::string any2str(const boost::any x)
         ss << boost::any_cast<size_t>(x);
     } else if (x.type() == typeid(int)) {
         ss << boost::any_cast<int>(x);
+    } else if (x.type() == typeid(bool)) {
+        ss << (boost::any_cast<bool>(x) ? "true" : "false" );
     } else {
-        ss << "UNKNOWN_TYPE";
+        ss << "...";
     }
     return ss.str();
 }
@@ -81,10 +84,12 @@ void log_params(const po::variables_map& params,
 
 std::queue<std::string> act_split(const po::variables_map& vm)
 {
-    TRACE_FUNC();
-    LOG_IMP(("*** Phase 1: Splitting/Sorting"));
+    std::string ifile = vm["srt.ifile"].as<std::string>();
+    LOG_IMP(("\n*** Phase 1: Splitting and Sorting"));
+    LOG_IMP(("Input file: %s") % ifile);
     log_params(vm, "srt");
     TIMER("Done in %t sec CPU, %w sec real\n");
+
 
     // create a pool of blocks shared between input and output streams
     auto mem_pool =
@@ -101,11 +106,11 @@ std::queue<std::string> act_split(const po::variables_map& vm)
     };
 
     // output stream factory
-    auto ostream_factory = [ &mem_pool, &vm ] () {
+    auto ostream_factory = [ &mem_pool, &ifile ] () {
         static int file_cnt = 0;
         std::stringstream filename;
-        filename << (boost::format("%s.%02d")
-                     % vm["srt.ofile"].as<std::string>() % (++file_cnt));
+        filename << (boost::format("%s.%s.%02d")
+                     % ifile % DEF_SRT_TMP_SFX % (++file_cnt));
 
         OutputStreamPtr sout(new OutputStream());
         sout->set_mem_pool(mem_pool);
@@ -120,8 +125,7 @@ std::queue<std::string> act_split(const po::variables_map& vm)
     };
 
     // split and sort
-    return split(vm["srt.ifile"].as<std::string>(),
-                 istream_factory, ostream_factory, ostream2file);
+    return split(ifile, istream_factory, ostream_factory, ostream2file);
 }
 
 /// ----------------------------------------------------------------------------
@@ -129,7 +133,9 @@ std::queue<std::string> act_split(const po::variables_map& vm)
 
 void act_merge(const po::variables_map& vm, std::queue<std::string>& files)
 {
-    LOG_IMP(("*** Phase 2: Merging"));
+    std::string ifile = vm["srt.ifile"].as<std::string>();
+    std::string ofile = vm["mrg.ofile"].as<std::string>();
+    LOG_IMP(("\n*** Phase 2: Merging"));
     log_params(vm, "mrg");
     TIMER("Done in %t sec CPU, %w sec real\n");
 
@@ -139,15 +145,16 @@ void act_merge(const po::variables_map& vm, std::queue<std::string>& files)
         sin->set_mem_pool(vm["mrg.iblock_size"].as<size_t>(),
                           vm["mrg.blocks"].as<size_t>());
         sin->set_input_filename(ifn);
+        sin->set_input_rm_file(!vm["no_rm"].as<bool>());
         return sin;
     };
 
     // onput stream factory
-    auto ostream_factory = [ &vm ] () {
+    auto ostream_factory = [ &vm, &ifile ] () {
         static int file_cnt = 0;
         std::stringstream filename;
-        filename << (boost::format("%s.%02d")
-                     % vm["mrg.ofile"].as<std::string>() % (++file_cnt));
+        filename << (boost::format("%s.%s.%02d")
+                     % ifile % DEF_MRG_TMP_SFX % (++file_cnt));
 
         OutputStreamPtr sout(new OutputStream());
         sout->set_mem_pool(vm["mrg.oblock_size"].as<size_t>(),
@@ -166,12 +173,10 @@ void act_merge(const po::variables_map& vm, std::queue<std::string>& files)
     merge(files, vm["mrg.tasks"].as<size_t>(), vm["mrg.nmerge"].as<size_t>(),
           istream_factory, ostream_factory, ostream2file);
 
-    if (rename(files.front().c_str(),
-               vm["mrg.rfile"].as<std::string>().c_str()) == 0) {
-        LOG_IMP(("*** Result: %s") % vm["mrg.rfile"].as<std::string>());
+    if (rename(files.front().c_str(), ofile.c_str()) == 0) {
+        LOG_IMP(("Output file: %s") % ofile);
     } else {
-        LOG_ERR(("Cannot rename %s to %s")
-                % files.front() % vm["mrg.rfile"].as<std::string>());
+        LOG_ERR(("Cannot rename %s to %s") % files.front() % ofile);
     }
 }
 
@@ -197,7 +202,8 @@ struct Generator
 
 void act_generate(const po::variables_map& vm)
 {
-    LOG_INF(("*** Generating random data"));
+    LOG_IMP(("\n*** Generating random data"));
+    LOG_IMP(("Output file: %s") % vm["gen.ofile"].as<std::string>());
     log_params(vm, "gen");
     TIMER("Done in %t sec CPU, %w sec real\n");
 
@@ -221,7 +227,8 @@ void act_generate(const po::variables_map& vm)
 
 void act_check(const po::variables_map& vm)
 {
-    LOG_IMP(("*** Checking data"));
+    LOG_IMP(("\n*** Checking data"));
+    LOG_IMP(("Input file: %s") % vm["chk.ifile"].as<std::string>());
     log_params(vm, "chk");
     TIMER("Done in %t sec CPU, %w sec real\n");
 
@@ -241,14 +248,19 @@ void act_check(const po::variables_map& vm)
 
 int main(int argc, char *argv[])
 {
+    std::string progname(argv[0]);
+    if (progname.rfind('/') != std::string::npos) {
+        progname = progname.substr(progname.rfind('/') + 1);
+    }
+
     std::ostringstream ss;
-    ss << boost::format("Usage: %s [options]\n\n"
-                        "General options") % argv[0];
+    ss << boost::format("\nUsage: %s [options]\n\n"
+                        "General options") % progname;
 
     po::options_description desc(ss.str());
     desc.add_options()
         ("help,h",
-         "Display this information")
+         "Display this information\n")
 
         ("act",
          po::value<std::string>()->default_value("all"),
@@ -269,19 +281,24 @@ int main(int argc, char *argv[])
          po::value<std::string>()->default_value("M"),
          "Memory unit: <B | K | M>")
 
-        ("dir",
+        ("tmpdir",
          po::value<std::string>()->default_value(DEF_TMP_DIR),
          "Directory for temporary files")
+
+        ("no_rm",
+         po::value<bool>()->
+             zero_tokens()->default_value(false)->implicit_value(true),
+         "Do not remove temporary files")
 
         ("log",
          po::value<int>()->default_value(4),
          "Log level: [0-6]");
 
-    po::options_description gen_desc("Options for act = gen (generate)");
+    po::options_description gen_desc("Options for act=gen (generate)");
     gen_desc.add_options()
         ("gen.ofile",
-         po::value<std::string>()->default_value(DEF_GEN_OUT_FILENAME),
-         "Output filename")
+         po::value<std::string>()->default_value(DEF_GEN_OFILE),
+         "Output file")
 
         ("gen.fsize",
          po::value<size_t>(),
@@ -293,33 +310,28 @@ int main(int argc, char *argv[])
          "Number of blocks in memory");
 
     po::options_description srt_desc(
-        "Options for act = srt (phase 1: split and sort)");
+        "Options for act=srt (phase 1: split and sort)");
     srt_desc.add_options()
         ("srt.ifile",
          po::value<std::string>()->default_value("<gen.ofile>"),
-         "Input filename")
-
-        ("srt.ofile",
-         po::value<std::string>()->default_value(DEF_SRT_OUT_FILENAME),
-         "Output filename (prefix)")
+         "Input file")
 
         ("srt.blocks",
          po::value<size_t>()->default_value(2),
          "Number of blocks in memory");
 
-    po::options_description mrg_desc("Options for act = mrg (phase 2: merge)");
+    po::options_description mrg_desc("Options for act=mrg (phase 2: merge)");
     mrg_desc.add_options()
-        ("mrg.ifile",
-         po::value<std::string>()->default_value("<srt.ofile>"),
-         "Input filename")
+        ("mrg.ifiles",
+         po::value<std::vector<std::string>>()->default_value(
+             std::vector<std::string>(), "<sorted splits>")->multitoken(),
+         "Input files to be merged into one.\n"
+         "Relevant and mandatory for act=mrg, otherwise the list of files "
+         "(sorted splits) is passed over from phase 1.")
 
         ("mrg.ofile",
-         po::value<std::string>()->default_value(DEF_MRG_OUT_FILENAME),
-         "Output filename (prefix)")
-
-        ("mrg.rfile",
          po::value<std::string>()->default_value("<srt.ifile>" DEF_MRG_RES_SFX),
-         "Result filename")
+         "Result file")
 
         ("mrg.tasks",
          po::value<size_t>()->default_value(4),
@@ -331,13 +343,13 @@ int main(int argc, char *argv[])
 
         ("mrg.blocks",
          po::value<size_t>()->default_value(2),
-         "Number of blocks per stream");
+         "Number of memory blocks per stream");
 
-    po::options_description chk_desc("Options for act = chk (check)");
+    po::options_description chk_desc("Options for act=chk (check)");
     chk_desc.add_options()
         ("chk.ifile",
-         po::value<std::string>()->default_value("<mrg.rfile>"),
-         "       Input filename")
+         po::value<std::string>()->default_value("<mrg.ofile>"),
+         "       Input file")
 
         ("chk.blocks",
          po::value<size_t>()->default_value(2),
@@ -408,68 +420,55 @@ int main(int argc, char *argv[])
     // adjust msize and gen.fsize according to munit
     mr["msize"].as<size_t>() *= munit;
     mr["gen.fsize"].as<size_t>() *= munit;
-    LOG_INF(("%-15s = %s bytes") % "msize" % vm["msize"].as<std::size_t>());
-
-    if (vm["srt.ifile"].defaulted()) {
-        mr["srt.ifile"].value() = mr["gen.ofile"].value();
-    }
-    if (vm["mrg.ifile"].defaulted()) {
-        mr["mrg.ifile"].value() = mr["srt.ofile"].value();
-    }
-    if (vm["chk.ifile"].defaulted()) {
-        mr["chk.ifile"].value() = mr["mrg.rfile"].value();
-    }
+    LOG_LOW(("%-15s = %s bytes") % "msize" % vm["msize"].as<std::size_t>());
 
     // create internal parameters based on the given configuration
     auto v0 = po::variable_value(size_t(0), false);
     vm.insert(std::make_pair("gen.size", v0));
-    vm.insert(std::make_pair("gen.block_mem", v0));
     vm.insert(std::make_pair("gen.block_size", v0));
-    vm.insert(std::make_pair("srt.block_mem", v0));
     vm.insert(std::make_pair("srt.block_size", v0));
     vm.insert(std::make_pair("mrg.task_mem", v0));
     vm.insert(std::make_pair("mrg.istream_mem", v0));
     vm.insert(std::make_pair("mrg.ostream_mem", v0));
-    vm.insert(std::make_pair("mrg.iblock_mem", v0));
-    vm.insert(std::make_pair("mrg.oblock_mem", v0));
     vm.insert(std::make_pair("mrg.iblock_size", v0));
     vm.insert(std::make_pair("mrg.oblock_size", v0));
-    vm.insert(std::make_pair("chk.block_mem", v0));
     vm.insert(std::make_pair("chk.block_size", v0));
 
-    mr["gen.size"].as<size_t>() = (mr["gen.fsize"].as<size_t>() /
-                                   mr["esize"].as<size_t>());
-    mr["gen.block_mem"].as<size_t>() = (mr["msize"].as<size_t>() /
-                                        mr["gen.blocks"].as<size_t>());
-    mr["gen.block_size"].as<size_t>() = (mr["gen.block_mem"].as<size_t>() /
-                                         mr["esize"].as<size_t>());
-
-    mr["srt.block_mem"].as<size_t>() = (mr["msize"].as<size_t>() /
-                                        mr["srt.blocks"].as<size_t>());
-    mr["srt.block_size"].as<size_t>() = (mr["srt.block_mem"].as<size_t>() /
-                                         mr["esize"].as<size_t>());
-
+    // [action = generate]
+    // number of elements to generate
+    mr["gen.size"].as<size_t>() = mr["gen.fsize"].as<size_t>() /
+                                  mr["esize"].as<size_t>();
+    // block size for output stream
+    mr["gen.block_size"].as<size_t>() = mr["msize"].as<size_t>() /
+                                        mr["gen.blocks"].as<size_t>() /
+                                        mr["esize"].as<size_t>();
+    // [action = split/sort]
+    // number of memory blocks _shared_ between input and output sterams
+    mr["srt.block_size"].as<size_t>() = mr["msize"].as<size_t>() /
+                                        mr["srt.blocks"].as<size_t>() /
+                                        mr["esize"].as<size_t>();
+    // [action = merge]
+    // memory per merge task
     mr["mrg.task_mem"].as<size_t>() = mr["msize"].as<size_t>() /
                                       mr["mrg.tasks"].as<size_t>();
-
+    // the output stream takes 50% of memory of the merge task
     mr["mrg.ostream_mem"].as<size_t>() = mr["mrg.task_mem"].as<size_t>() / 2;
+    // the other 50% is divided between the input streams
     mr["mrg.istream_mem"].as<size_t>() = (mr["mrg.task_mem"].as<size_t>() -
                                           mr["mrg.ostream_mem"].as<size_t>()) /
                                          mr["mrg.nmerge"].as<size_t>();
-
-    mr["mrg.iblock_mem"].as<size_t>()  = mr["mrg.istream_mem"].as<size_t>() /
-                                         mr["mrg.blocks"].as<size_t>();
-    mr["mrg.oblock_mem"].as<size_t>()  = mr["mrg.ostream_mem"].as<size_t>() /
-                                         mr["mrg.blocks"].as<size_t>();
-    mr["mrg.iblock_size"].as<size_t>() = mr["mrg.iblock_mem"].as<size_t>() /
+    // block size for input and output streams
+    mr["mrg.iblock_size"].as<size_t>() = mr["mrg.istream_mem"].as<size_t>() /
+                                         mr["mrg.blocks"].as<size_t>() /
                                          mr["esize"].as<size_t>();
-    mr["mrg.oblock_size"].as<size_t>() = mr["mrg.oblock_mem"].as<size_t>() /
+    mr["mrg.oblock_size"].as<size_t>() = mr["mrg.ostream_mem"].as<size_t>() /
+                                         mr["mrg.blocks"].as<size_t>() /
                                          mr["esize"].as<size_t>();
-
-    mr["chk.block_mem"].as<size_t>() = (mr["msize"].as<size_t>() /
-                                        mr["chk.blocks"].as<size_t>());
-    mr["chk.block_size"].as<size_t>() = (mr["chk.block_mem"].as<size_t>() /
-                                         mr["esize"].as<size_t>());
+    // [action = check]
+    // block size for input stream
+    mr["chk.block_size"].as<size_t>() = mr["msize"].as<size_t>() /
+                                        mr["chk.blocks"].as<size_t>() /
+                                        mr["esize"].as<size_t>();
 
     uint8_t act = ACT_NONE;
     std::string action = vm["act"].as<std::string>();
@@ -492,11 +491,38 @@ int main(int argc, char *argv[])
     }
 
     std::queue<std::string> files;
-    // if no split/sort phase, merge what is given in command line
-    // FIX IT: files.push(vm["mrg.file_in"].as<std::string>());
 
-    TIMER("Done in %t sec CPU, %w sec real\n");
+    // adjust filename variables according to the provided options
+    if (vm["srt.ifile"].defaulted()) {
+        mr["srt.ifile"].value() = mr["gen.ofile"].value();
+    }
+    if (!(act & ACT_SRT) && (act & ACT_MRG)) {
+        // no split/sort phase, only the merge phase
+        if (vm["mrg.ifiles"].defaulted()) {
+            LOG_ERR(("Missing mandatory parameter: mrg.ifiles\n"
+                     "For more information, run: %s --help") % argv[0]);
+            return 1;
+        } else {
+            // copy the provided files into the queue
+            for (const auto& x :
+                 vm["mrg.ifiles"].as<std::vector<std::string>>()) {
+                files.push(x);
+            }
+            // dummy filename, used as a prefix for output merge files
+            mr["srt.ifile"].as<std::string>() = "input";
+        }
+    }
+    if (vm["mrg.ofile"].defaulted()) {
+        mr["mrg.ofile"].value() = mr["srt.ifile"].value();
+        mr["mrg.ofile"].as<std::string>() += DEF_MRG_RES_SFX;
+    }
+    if (vm["chk.ifile"].defaulted()) {
+        mr["chk.ifile"].value() = mr["mrg.ofile"].value();
+    }
 
+    TIMER("\nOverall %t sec CPU, %w sec real\n");
+
+    // action!
     if (act & ACT_GEN) {
         act_generate(vm);
     }
