@@ -1,23 +1,19 @@
 #ifndef BLOCK_TYPES_HPP
 #define BLOCK_TYPES_HPP
 
-#include <memory>
 #include <vector>
+#include <memory>
+
+namespace external_sort {
+namespace block {
 
 template <typename T>
 using VectorBlock = std::vector<T>;
 
-using U8Block  = VectorBlock<uint8_t>;
-using U16Block = VectorBlock<uint16_t>;
-using U32Block = VectorBlock<uint32_t>;
-
-template <typename Block>
-struct BlockTraits {};
-
-template <>
-struct BlockTraits<U32Block>
+template <typename BlockType>
+struct BlockTraits
 {
-    using Block = U32Block;
+    using Block = BlockType;
 
     using BlockPtr = Block*;
     inline static void* RawPtr(BlockPtr block) { return block; };
@@ -29,10 +25,11 @@ struct BlockTraits<U32Block>
     // inline static void DeletePtr(BlockPtr block) { };
 
     using Container = Block;
-    using ValueType = typename Container::value_type;
     using Iterator  = typename Container::iterator;
-
-    using Comparator = std::less<ValueType>;
+    using ValueType = typename Container::value_type;
 };
+
+} // namespace block
+} // namespace external_sort
 
 #endif

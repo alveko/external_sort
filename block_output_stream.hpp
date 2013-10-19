@@ -7,8 +7,10 @@
 #include <atomic>
 #include <queue>
 
-#include "logging.hpp"
 #include "block_types.hpp"
+
+namespace external_sort {
+namespace block {
 
 template <typename Block, typename WritePolicy, typename MemoryPolicy>
 class BlockOutputStream : public WritePolicy, public MemoryPolicy
@@ -129,5 +131,8 @@ void BlockOutputStream<Block, WritePolicy, MemoryPolicy>::WriteBlock(
     WritePolicy::Write(block);
     MemoryPolicy::Free(block);
 }
+
+} // namespace block
+} // namespace external_sort
 
 #endif

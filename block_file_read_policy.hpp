@@ -5,8 +5,10 @@
 #include <fstream>
 #include <cstdio>
 
-#include "logging.hpp"
 #include "block_types.hpp"
+
+namespace external_sort {
+namespace block {
 
 /// ----------------------------------------------------------------------------
 /// BlockFileReadPolicy
@@ -114,5 +116,8 @@ void BlockFileReadPolicy<Block>::FileClose()
         }
     }
 }
+
+} // namespace block
+} // namespace external_sort
 
 #endif

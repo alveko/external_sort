@@ -1,25 +1,110 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <memory>
-#include <queue>
-#include <boost/format.hpp>
+#include <list>
 
-#include "logging.hpp"
 #include "async_funcs.hpp"
-#include "stream_merge.hpp"
+#include "external_sort_types.hpp"
+#include "external_sort_merge.hpp"
+
+namespace external_sort {
+
+const char* DEF_SRT_TMP_SFX = "split";
+const char* DEF_MRG_TMP_SFX = "merge";
+
+enum MemUnit { MB, KB, B };
 
 /// ----------------------------------------------------------------------------
-/// split and sort
+/// Parameter objects
 
-template <typename Block, typename OStreamPtr>
-OStreamPtr sort_and_write(typename BlockTraits<Block>::BlockPtr block,
-                          OStreamPtr ostream)
+struct MemoryParams
+{
+    size_t  size   = 10;
+    MemUnit unit   = MB;
+    size_t  blocks = 2;
+};
+
+struct SplitParams
+{
+    MemoryParams mem;
+    struct {
+        std::string ifile;
+        std::string oprefix;
+        bool rm_input = false;
+    } spl;
+    struct {
+        std::list<std::string> ofiles;
+    } out;
+};
+
+struct MergeParams
+{
+    MemoryParams mem;
+    struct {
+        size_t merges    = 4;
+        size_t nmerge    = 4;
+        size_t stmblocks = 2;
+        std::list<std::string> ifiles;
+        std::string ofile;
+        bool rm_input = true;
+    } mrg;
+};
+
+struct CheckParams
+{
+    MemoryParams mem;
+    struct {
+        std::string ifile;
+    } chk;
+};
+
+struct GenerateParams
+{
+    MemoryParams mem;
+    struct {
+        size_t size = 0;
+        std::string ofile;
+    } gen;
+};
+
+/// ----------------------------------------------------------------------------
+/// auxiliary functions
+
+template <typename SizeType>
+SizeType memsize_in_bytes(const SizeType& memsize, const MemUnit& u)
+{
+    if (u == KB) {
+        return memsize << 10;
+    }
+    if (u == MB) {
+        return memsize << 20;
+    }
+    return memsize;
+}
+
+template <typename IndexType>
+std::string make_tmp_filename(const std::string& prefix,
+                              const std::string& suffix,
+                              const IndexType& index)
+{
+    std::ostringstream filename;
+    filename << prefix << "." << suffix << "."
+             << std::setfill ('0') << std::setw(3) << index;
+    return filename.str();
+}
+
+template <typename ValueType>
+typename Types<ValueType>::OStreamPtr
+sort_and_write(typename Types<ValueType>::BlockPtr block,
+               typename Types<ValueType>::OStreamPtr ostream)
 {
     // sort the block
     std::sort(block->begin(), block->end(),
-              typename BlockTraits<Block>::Comparator());
-    TRACE(("block %014p sorted") % BlockTraits<Block>::RawPtr(block));
+              typename Types<ValueType>::Comparator());
+    TRACE(("block %014p sorted") %
+          Types<ValueType>::BlockTraits::RawPtr(block));
 
     // write the block to the output stream
     ostream->Open();
@@ -28,71 +113,94 @@ OStreamPtr sort_and_write(typename BlockTraits<Block>::BlockPtr block,
     return ostream;
 }
 
-template <typename IStrmFactory, typename OStrmFactory, typename OStrm2File>
-std::queue<std::string> split(const std::string& ifile,
-                              IStrmFactory create_istream,
-                              OStrmFactory create_ostream,
-                              OStrm2File ostream2file)
+/// ----------------------------------------------------------------------------
+/// main external sorting functions
+
+template <typename ValueType>
+void split(SplitParams& params)
 {
     TRACE_FUNC();
-    using IStreamPtr = typename std::result_of<IStrmFactory(std::string)>::type;
-    using OStreamPtr = typename std::result_of<OStrmFactory()>::type;
-    using Block = typename IStreamPtr::element_type::BlockType;
+    size_t file_cnt = 0;
 
-    AsyncFuncs<OStreamPtr> splits;
-    std::queue<std::string> ofiles;
+    aux::AsyncFuncs<typename Types<ValueType>::OStreamPtr> splits;
 
-    IStreamPtr istream = create_istream(ifile);
+    // create memory pool to be shared between input and output streams
+    auto mem_pool = std::make_shared<typename Types<ValueType>::BlockPool>(
+        memsize_in_bytes(params.mem.size, params.mem.unit), params.mem.blocks);
+
+    // create the input stream
+    auto istream = std::make_shared<typename Types<ValueType>::IStream>();
+    istream->set_mem_pool(mem_pool);
+    istream->set_input_filename(params.spl.ifile);
+    istream->set_input_rm_file(params.spl.rm_input);
     istream->Open();
-    while (!istream->Empty()) {
 
+    while (!istream->Empty()) {
         // read a block from the input stream
         auto block = istream->FrontBlock();
         istream->PopBlock();
 
-        // asynchronously sort it and write to the output stream
-        splits.Async(&sort_and_write<Block, OStreamPtr>,
-                     std::move(block), std::move(create_ostream()));
+        // create an output stream
+        auto ostream = std::make_shared<typename Types<ValueType>::OStream>();
+        ostream->set_mem_pool(mem_pool);
+        ostream->set_output_filename(
+            make_tmp_filename(params.spl.oprefix, DEF_SRT_TMP_SFX, ++file_cnt));
+
+        // asynchronously sort the block and write it to the output stream
+        splits.Async(&sort_and_write<ValueType>,
+                     std::move(block), std::move(ostream));
 
         // collect the results
-        while ((splits.Ready() > 0) ||
-               (splits.Running() && istream->Empty())) {
-            ofiles.push(ostream2file(splits.GetAny()));
+        while ((splits.Ready() > 0) || (splits.Running() && istream->Empty())) {
+            // wait for any split and get its output filename
+            auto ostream_ready = splits.GetAny();
+            params.out.ofiles.push_back(ostream_ready->output_filename());
         }
     }
     istream->Close();
-    assert(splits.Empty());
-    return ofiles;
 }
 
-/// ----------------------------------------------------------------------------
-/// merge
-
-template <typename IStrmFactory, typename OStrmFactory, typename OStrm2File>
-void merge(std::queue<std::string>& files, size_t mrg_tasks, size_t mrg_nmerge,
-           IStrmFactory create_istream, OStrmFactory create_ostream,
-           OStrm2File ostream2file)
+template <typename ValueType>
+void merge(MergeParams& params)
 {
     TRACE_FUNC();
-    using IStreamPtr = typename std::result_of<IStrmFactory(std::string)>::type;
-    using OStreamPtr = typename std::result_of<OStrmFactory()>::type;
+    size_t file_cnt = 0;
 
-    AsyncFuncs<OStreamPtr> merges;
+    aux::AsyncFuncs<typename Types<ValueType>::OStreamPtr> merges;
 
     // Merge files. Stop when one file left and no ongoing merges
+    auto files = params.mrg.ifiles;
     while (!(files.size() == 1 && merges.Empty())) {
         LOG_INF(("* files left to merge %d") % files.size());
 
-        // create input streams (nmerge streams from the queue)
-        std::unordered_set<IStreamPtr> sin;
-        while (sin.size() < mrg_nmerge && !files.empty()) {
-            sin.insert(create_istream(files.front()));
-            files.pop();
+        // create a set of input streams with next nmerge files from the queue
+        std::unordered_set<typename Types<ValueType>::IStreamPtr> istreams;
+        while (istreams.size() < params.mrg.nmerge && !files.empty()) {
+
+            // create input stream
+            auto is = std::make_shared<typename Types<ValueType>::IStream>();
+            is->set_mem_pool(memsize_in_bytes(params.mem.size, params.mem.unit),
+                             params.mrg.stmblocks);
+            is->set_input_filename(files.front());
+            is->set_input_rm_file(params.mrg.rm_input);
+
+            // add to the set
+            istreams.insert(is);
+            files.pop_front();
         }
 
+        // create an output stream
+        auto ostream = std::make_shared<typename Types<ValueType>::OStream>();
+        ostream->set_mem_pool(memsize_in_bytes(params.mem.size,
+                                               params.mem.unit),
+                              params.mrg.stmblocks);
+        ostream->set_output_filename(
+            make_tmp_filename(params.mrg.ofile, DEF_MRG_TMP_SFX, ++file_cnt));
+
         // asynchronously merge and write to the output stream
-        merges.Async(&merge_streams<IStreamPtr, OStreamPtr>,
-                     std::move(sin), std::move(create_ostream()));
+        merges.Async(&merge_streams<typename Types<ValueType>::IStreamPtr,
+                                    typename Types<ValueType>::OStreamPtr>,
+                     std::move(istreams), std::move(ostream));
 
         // Wait/get results of asynchroniously running merges if:
         // 1) Too few files ready to be merged, while still running merges.
@@ -100,26 +208,30 @@ void merge(std::queue<std::string>& files, size_t mrg_tasks, size_t mrg_nmerge,
         //    currently available. So wait for more files.
         // 2) There are completed (ready) merges; results shall be collected
         // 3) There are simple too many already ongoing merges
-        while ((files.size() < mrg_nmerge && !merges.Empty()) ||
-               (merges.Ready() > 0) || (merges.Running() >= mrg_tasks)) {
-            files.push(ostream2file(merges.GetAny()));
+        while ((files.size() < params.mrg.nmerge && !merges.Empty()) ||
+               (merges.Ready() > 0) || (merges.Running() >= params.mrg.merges)) {
+            auto ostream_ready = merges.GetAny();
+            files.push_back(ostream_ready->output_filename());
         }
     }
-    assert(merges.Empty());
+
+    if (rename(files.front().c_str(), params.mrg.ofile.c_str()) == 0) {
+        LOG_IMP(("Output file: %s") % params.mrg.ofile);
+    } else {
+        LOG_ERR(("Cannot rename %s to %s") % files.front() % params.mrg.ofile);
+    }
 }
 
-/// ----------------------------------------------------------------------------
-/// check
-
-template <typename IStrmFactory>
-void check(IStrmFactory create_istream)
+template <typename ValueType>
+bool check(CheckParams& params)
 {
     TRACE_FUNC();
-    using IStreamPtr = typename std::result_of<IStrmFactory()>::type;
-    using Block = typename IStreamPtr::element_type::BlockType;
-    auto comp = typename BlockTraits<Block>::Comparator();
+    auto comp = typename Types<ValueType>::Comparator();
 
-    IStreamPtr istream = create_istream();
+    auto istream = std::make_shared<typename Types<ValueType>::IStream>();
+    istream->set_mem_pool(memsize_in_bytes(params.mem.size, params.mem.unit),
+                          params.mem.blocks);
+    istream->set_input_filename(params.chk.ifile);
     istream->Open();
 
     size_t cnt = 0, bad = 0;
@@ -156,19 +268,29 @@ void check(IStrmFactory create_istream)
     }
     LOG_IMP(("\tsorted = %s, elements = %s") % sorted % cnt);
     istream->Close();
+    return sorted;
 }
 
-/// ----------------------------------------------------------------------------
-/// generate
-
-template <typename OStrmFactory , typename Generator>
-void generate(size_t gen_size, OStrmFactory create_ostream, Generator generator)
+template <typename ValueType>
+void generate(const GenerateParams& params)
 {
     TRACE_FUNC();
-    auto ostream = create_ostream();
+
+    auto generator = typename Types<ValueType>::Generator();
+    size_t gen_elements = memsize_in_bytes(params.gen.size, params.mem.unit) /
+                          sizeof(ValueType);
+
+    auto ostream = std::make_shared<typename Types<ValueType>::OStream>();
+    ostream->set_mem_pool(memsize_in_bytes(params.mem.size, params.mem.unit),
+                          params.mem.blocks);
+    ostream->set_output_filename(params.gen.ofile);
     ostream->Open();
-    for (size_t i = 0; i < gen_size; i++) {
+
+    for (size_t i = 0; i < gen_elements; i++) {
         ostream->Push(generator());
     }
+
     ostream->Close();
 }
+
+} // namespace external_sort

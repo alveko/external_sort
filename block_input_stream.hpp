@@ -7,8 +7,10 @@
 #include <atomic>
 #include <queue>
 
-#include "logging.hpp"
 #include "block_types.hpp"
+
+namespace external_sort {
+namespace block {
 
 template <typename Block, typename ReadPolicy, typename MemoryPolicy>
 class BlockInputStream : public ReadPolicy, public MemoryPolicy
@@ -178,5 +180,8 @@ void BlockInputStream<Block, ReadPolicy, MemoryPolicy>::WaitForBlock()
                % BlockTraits<Block>::RawPtr(block_) % blocks_queue_.size());
     }
 }
+
+} // namespace block
+} // namespace external_sort
 
 #endif

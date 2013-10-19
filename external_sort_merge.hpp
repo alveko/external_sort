@@ -1,11 +1,7 @@
-#ifndef STREAM_MERGE_HPP
-#define STREAM_MERGE_HPP
+#ifndef EXTERNAL_SORT_MERGE_HPP
+#define EXTERNAL_SORT_MERGE_HPP
 
-#include <unordered_set>
-#include "logging.hpp"
-
-template <typename T>
-using StreamSet = std::unordered_set<T>;
+namespace external_sort {
 
 // merges 1 stream (simple copy)
 template <typename InputStream, typename OutputStream>
@@ -180,8 +176,8 @@ OutputStreamPtr merge_streams(StreamSet<InputStreamPtr> sin,
     StreamSet<InputStream*> sinp;
     OutputStream* soutp = sout.get();
 
-    auto comp =
-        typename BlockTraits<typename InputStream::BlockType>::Comparator();
+    auto comp = typename Types<
+        typename InputStream::BlockType::value_type>::Comparator();
 
     for (const auto& s : sin) {
         s->Open();
@@ -211,5 +207,7 @@ OutputStreamPtr merge_streams(StreamSet<InputStreamPtr> sin,
     sout->Close();
     return sout;
 }
+
+} // namespace external_sort
 
 #endif

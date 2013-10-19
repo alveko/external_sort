@@ -6,8 +6,10 @@
 #include <atomic>
 #include <stack>
 
-#include "logging.hpp"
 #include "block_types.hpp"
+
+namespace external_sort {
+namespace block {
 
 template <typename Block>
 class BlockMemoryPolicy
@@ -19,7 +21,7 @@ class BlockMemoryPolicy
 
     class BlockPool : boost::noncopyable {
       public:
-        BlockPool(size_t block_size, size_t blocks_max);
+        BlockPool(size_t memsize, size_t memblocks);
         ~BlockPool();
 
       public:
@@ -32,8 +34,7 @@ class BlockMemoryPolicy
         mutable std::mutex mtx_;
         std::condition_variable cv_;
         std::stack<BlockPtr> pool_;
-        size_t block_size_;
-        size_t blocks_max_;
+        size_t blocks_;
         size_t blocks_cnt_;
         size_t blocks_allocated_;
     };
@@ -43,8 +44,8 @@ class BlockMemoryPolicy
     inline void Free(BlockPtr block) { mem_pool_->Free(block); }
 
     BlockPoolPtr mem_pool() { return mem_pool_; }
-    void set_mem_pool(size_t block_size, size_t blocks_max) {
-        mem_pool_ = std::make_shared<BlockPool>(block_size, blocks_max);
+    void set_mem_pool(size_t memsize, size_t memblocks) {
+        mem_pool_ = std::make_shared<BlockPool>(memsize, memblocks);
     };
     void set_mem_pool(BlockPoolPtr pool) { mem_pool_ = pool; };
 
@@ -53,20 +54,23 @@ class BlockMemoryPolicy
 };
 
 template <typename Block>
-BlockMemoryPolicy<Block>::BlockPool::BlockPool(size_t block_size,
-                                               size_t blocks_max)
-    : block_size_(block_size),
-      blocks_max_(blocks_max),
+BlockMemoryPolicy<Block>::BlockPool::BlockPool(size_t memsize,
+                                               size_t memblocks)
+    : blocks_(memblocks),
       blocks_cnt_(0),
       blocks_allocated_(0)
 {
-    TRACEX(("new block pool: block_size %d, blocks_max %d")
-           % block_size % blocks_max);
+    TRACEX(("new block pool: memsize %d, memblocks %d")
+           % memsize % memblocks);
+
+    size_t block_size = memsize /
+                        (sizeof(typename BlockTraits<Block>::ValueType)) /
+                        memblocks;
 
     // pre-allocate a pool of blocks
-    while (pool_.size() < blocks_max_) {
+    while (pool_.size() < blocks_) {
         BlockPtr block(new Block);
-        block->reserve(block_size_);
+        block->reserve(block_size);
         pool_.push(block);
         TRACEX(("new block %014p added to the pool")
                % BlockTraits<Block>::RawPtr(block));
@@ -113,7 +117,7 @@ auto BlockMemoryPolicy<Block>::BlockPool::Allocate()
     blocks_allocated_++;
     TRACEX(("block %014p allocated (%d)! (%s/%s), cap = %s")
            % BlockTraits<Block>::RawPtr(block) % blocks_cnt_
-           % blocks_allocated_ % blocks_max_ % block->capacity());
+           % blocks_allocated_ % blocks_ % block->capacity());
     return block;
 }
 
@@ -129,8 +133,11 @@ void BlockMemoryPolicy<Block>::BlockPool::Free(BlockPtr block)
 
     TRACEX(("block %014p deallocated    (%s/%s)")
            % BlockTraits<Block>::RawPtr(block)
-           % blocks_allocated_ % blocks_max_);
+           % blocks_allocated_ % blocks_);
     cv_.notify_one();
 }
+
+} // namespace block
+} // namespace external_sort
 
 #endif

@@ -7,6 +7,9 @@
 #include <atomic>
 #include <list>
 
+namespace external_sort {
+namespace aux {
+
 template <typename ResultType>
 class AsyncFuncs
 {
@@ -91,5 +94,8 @@ void AsyncFuncs<ResultType>::RunFunc(Fn&& fn, Args&&... args)
            % funcs_running_ % funcs_ready_.size());
     cv_.notify_one();
 }
+
+} // namespace aux
+} // namespace external_sort
 
 #endif
