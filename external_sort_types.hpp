@@ -14,7 +14,80 @@
 
 namespace external_sort {
 
-// Default generator
+/// ----------------------------------------------------------------------------
+/// Parameter objects
+
+enum MemUnit { MB, KB, B };
+
+struct MemParams
+{
+    size_t  size   = 10;
+    MemUnit unit   = MB;
+    size_t  blocks = 2;
+};
+
+struct ErrParams
+{
+    bool none = true;
+    std::ostringstream stream;
+
+    operator bool () const { return !none; }
+    operator std::string () const { return stream.str(); }
+    std::string msg() const { return stream.str(); }
+
+};
+
+struct SplitParams
+{
+    MemParams mem;
+    ErrParams err;
+    struct {
+        std::string ifile;
+        std::string oprefix;
+        bool rm_input = false;
+    } spl;
+    struct {
+        std::list<std::string> ofiles;
+    } out;
+};
+
+struct MergeParams
+{
+    MemParams mem;
+    ErrParams err;
+    struct {
+        size_t merges    = 4;
+        size_t nmerge    = 4;
+        size_t stmblocks = 2;
+        std::list<std::string> ifiles;
+        std::string ofile;
+        bool rm_input = true;
+    } mrg;
+};
+
+struct CheckParams
+{
+    MemParams mem;
+    ErrParams err;
+    struct {
+        std::string ifile;
+    } chk;
+};
+
+struct GenerateParams
+{
+    MemParams mem;
+    ErrParams err;
+    struct {
+        size_t size = 0;
+        std::string ofile;
+    } gen;
+};
+
+/// ----------------------------------------------------------------------------
+/// Types
+
+//! Default generator
 template <typename T>
 struct DefaultValueGenerator
 {
@@ -31,7 +104,7 @@ struct DefaultValueGenerator
     }
 };
 
-// Default value-to-string convertor
+//! Default value-to-string convertor
 template <typename ValueType>
 struct DefaultValue2Str
 {
@@ -43,7 +116,7 @@ struct DefaultValue2Str
     }
 };
 
-// Default ValueType traits
+//! Default ValueType traits
 template <typename ValueType>
 struct ValueTraits
 {
@@ -54,10 +127,11 @@ struct ValueTraits
     static const size_t ValueSize = sizeof(ValueType);
 };
 
+//! Stream set
 template <typename T>
 using StreamSet = std::unordered_set<T>;
 
-// All types in one plase
+//! All types in one place
 template <typename ValueType>
 struct Types
 {

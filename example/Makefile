@@ -1,7 +1,7 @@
 CXX	?= g++
 
 CFLAGS	= -std=c++11 -c -Wall -pthread -DBOOST_LOG_DYN_LINK
-INCL	= -I. -I./logging -I/usr/local/include
+INCL	= -I.. -I./logging -I/usr/local/include
 LDFLAGS	= \
 	-pthread \
 	-L/usr/local/lib \

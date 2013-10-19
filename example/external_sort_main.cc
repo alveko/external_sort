@@ -6,28 +6,27 @@
 #include <boost/format.hpp>
 
 #include "logging.hpp"
-
 #include "external_sort.hpp"
-
-/// ----------------------------------------------------------------------------
-/// type definitions
-
-#define ACT_NONE (0x00)
-#define ACT_ALL  (0xFF)
-#define ACT_GEN  (1 << 0)
-#define ACT_SRT  (1 << 1)
-#define ACT_MRG  (1 << 2)
-#define ACT_CHK  (1 << 3)
-
-#define DEF_MRG_RES_SFX  ".sorted"
-#define DEF_GEN_OFILE    "generated"
-#define DEF_MRG_OFILE    DEF_GEN_OFILE DEF_MRG_RES_SFX
 
 namespace po = boost::program_options;
 
+/// ----------------------------------------------------------------------------
+/// types
+
 using ValueType = uint32_t;
 
+/// ----------------------------------------------------------------------------
+/// consts
 
+const uint8_t ACT_NONE = 0x00;
+const uint8_t ACT_ALL = 0xFF;
+const uint8_t ACT_GEN = 1 << 0;
+const uint8_t ACT_SRT = 1 << 1;
+const uint8_t ACT_MRG = 1 << 2;
+const uint8_t ACT_CHK = 1 << 3;
+
+const char* DEF_MRG_RES_SFX = ".sorted";
+const char* DEF_GEN_OFILE = "generated";
 
 /// ----------------------------------------------------------------------------
 /// auxiliary functions
@@ -96,6 +95,9 @@ std::list<std::string> act_split(const po::variables_map& vm)
     params.spl.oprefix = vm["tfile"].as<std::string>();
 
     external_sort::split<ValueType>(params);
+    if (params.err) {
+        LOG_ERR(("Error: %s") % params.err.msg());
+    }
     return params.out.ofiles;
 }
 
@@ -119,6 +121,9 @@ void act_merge(const po::variables_map& vm, std::list<std::string>& files)
     params.mrg.rm_input  = !vm["no_rm"].as<bool>();
 
     external_sort::merge<ValueType>(params);
+    if (params.err) {
+        LOG_ERR(("Error: %s") % params.err.msg());
+    }
 }
 
 /// ----------------------------------------------------------------------------
@@ -139,6 +144,9 @@ void act_generate(const po::variables_map& vm)
     params.gen.size   = vm["gen.fsize"].as<size_t>();
 
     external_sort::generate<ValueType>(params);
+    if (params.err) {
+        LOG_ERR(("Error: %s") % params.err.msg());
+    }
 }
 
 /// ----------------------------------------------------------------------------
@@ -155,9 +163,13 @@ void act_check(const po::variables_map& vm)
     params.mem.size   = vm["msize"].as<size_t>();
     params.mem.unit   = vm["memunit"].as<external_sort::MemUnit>();
     params.mem.blocks = vm["chk.blocks"].as<size_t>();
-    params.chk.ifile     = vm["chk.ifile"].as<std::string>();
+    params.chk.ifile  = vm["chk.ifile"].as<std::string>();
 
     external_sort::check<ValueType>(params);
+    if (params.err) {
+        LOG_ERR(("The input file is NOT sorted!"));
+    }
+    LOG_IMP(("%s") % params.err.msg());
 }
 
 /// ----------------------------------------------------------------------------
@@ -242,7 +254,8 @@ int main(int argc, char *argv[])
          "i.e. sorted splits, is passed over from phase 1)")
 
         ("mrg.ofile",
-         po::value<std::string>()->default_value("<srt.ifile>" DEF_MRG_RES_SFX),
+         po::value<std::string>()->default_value(std::string("<srt.ifile>") +
+                                                 DEF_MRG_RES_SFX),
          "Output file (required if act=mrg)")
 
         ("mrg.tasks",

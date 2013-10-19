@@ -19,7 +19,7 @@ class BlockMemoryPolicy
     class BlockPool;
     using BlockPoolPtr = std::shared_ptr<BlockPool>;
 
-    class BlockPool : boost::noncopyable {
+    class BlockPool /*: boost::noncopyable*/ {
       public:
         BlockPool(size_t memsize, size_t memblocks);
         ~BlockPool();

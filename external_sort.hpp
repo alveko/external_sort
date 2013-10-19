@@ -5,69 +5,15 @@
 #include <memory>
 #include <list>
 
-#include "async_funcs.hpp"
 #include "external_sort_types.hpp"
+#include "external_sort_nolog.hpp"
 #include "external_sort_merge.hpp"
+#include "async_funcs.hpp"
 
 namespace external_sort {
 
 const char* DEF_SRT_TMP_SFX = "split";
 const char* DEF_MRG_TMP_SFX = "merge";
-
-enum MemUnit { MB, KB, B };
-
-/// ----------------------------------------------------------------------------
-/// Parameter objects
-
-struct MemoryParams
-{
-    size_t  size   = 10;
-    MemUnit unit   = MB;
-    size_t  blocks = 2;
-};
-
-struct SplitParams
-{
-    MemoryParams mem;
-    struct {
-        std::string ifile;
-        std::string oprefix;
-        bool rm_input = false;
-    } spl;
-    struct {
-        std::list<std::string> ofiles;
-    } out;
-};
-
-struct MergeParams
-{
-    MemoryParams mem;
-    struct {
-        size_t merges    = 4;
-        size_t nmerge    = 4;
-        size_t stmblocks = 2;
-        std::list<std::string> ifiles;
-        std::string ofile;
-        bool rm_input = true;
-    } mrg;
-};
-
-struct CheckParams
-{
-    MemoryParams mem;
-    struct {
-        std::string ifile;
-    } chk;
-};
-
-struct GenerateParams
-{
-    MemoryParams mem;
-    struct {
-        size_t size = 0;
-        std::string ofile;
-    } gen;
-};
 
 /// ----------------------------------------------------------------------------
 /// auxiliary functions
@@ -219,6 +165,9 @@ void merge(MergeParams& params)
         LOG_IMP(("Output file: %s") % params.mrg.ofile);
     } else {
         LOG_ERR(("Cannot rename %s to %s") % files.front() % params.mrg.ofile);
+        params.err.none = false;
+        params.err.stream << "Cannot rename " << files.front()
+                          << " to " << params.mrg.ofile;
     }
 }
 
@@ -235,40 +184,47 @@ bool check(CheckParams& params)
     istream->Open();
 
     size_t cnt = 0, bad = 0;
-    bool sorted = true;
     if (!istream->Empty()) {
-        auto v_curr  = istream->Front();
-        auto v_prev  = v_curr;
-        auto v_first = v_prev;
-        auto v_min   = v_prev;
-        auto v_max   = v_prev;
+        auto vcurr  = istream->Front();
+        auto vprev  = vcurr;
+        auto vfirst = vprev;
+        auto vmin   = vfirst;
+        auto vmax   = vfirst;
         istream->Pop();
         ++cnt;
 
         while (!istream->Empty()) {
-            v_curr = istream->Front();
-            if (comp(v_curr, v_prev) && bad < 10) {
-                sorted = false;
-                LOG_WRN(("OUT OF ORDER: cnt = %s, prev = %s, curr = %s")
-                        % cnt % v_prev % v_curr);
+            vcurr = istream->Front();
+            if (comp(vcurr, vprev)) {
+                if (bad < 10) {
+                    params.err.stream << "Out of order! cnt = " << cnt
+                                      << " prev = " << vprev
+                                      << " curr = " << vcurr << "\n";
+                }
                 bad++;
             }
-            if (comp(v_curr, v_min)) {
-                v_min = v_curr;
+            if (comp(vcurr, vmin)) {
+                vmin = vcurr;
             }
-            if (comp(v_max, v_curr)) {
-                v_max = v_curr;
+            if (comp(vmax, vcurr)) {
+                vmax = vcurr;
             }
-            v_prev = v_curr;
+            vprev = vcurr;
             istream->Pop();
             ++cnt;
         }
-        LOG_IMP(("\tmin = %s, max = %s") % v_min % v_max);
-        LOG_IMP(("\tfirst = %s, last = %s") % v_first % v_prev);
+        if (bad) {
+            params.err.none = false;
+            params.err.stream << "Total elements out of order: " << bad << "\n";
+        }
+        params.err.stream << "\tmin = " << vmin << ", max = " << vmax << "\n";
+        params.err.stream << "\tfirst = " << vfirst << ", last = " << vprev
+                          << "\n";
     }
-    LOG_IMP(("\tsorted = %s, elements = %s") % sorted % cnt);
+    params.err.stream << "\tsorted = " << ((bad) ? "false" : "true")
+                      << ", elems = " << cnt << ", bad = " << bad;
     istream->Close();
-    return sorted;
+    return bad == 0;
 }
 
 template <typename ValueType>

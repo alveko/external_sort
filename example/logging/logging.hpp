@@ -4,6 +4,25 @@
 #include <boost/format.hpp>
 #include <boost/timer/timer.hpp>
 
+// we are going to define the LOG* and TRACE*  macros
+// undefine the macros first to avoid possible double definition warning
+#undef LOG
+#undef LOG_FAT
+#undef LOG_ERR
+#undef LOG_WRN
+#undef LOG_IMP
+#undef LOG_INF
+#undef LOG_LOW
+#undef LOG_DBG
+
+#undef TRACE
+#undef TRACE_SCOPE
+#undef TRACE_FUNC
+#undef TRACEX
+#undef TRACEX_SCOPE
+#undef TRACEX_METHOD
+#undef TRACEX_NAME
+
 // NOLOG
 // STDLOG
 // BOOSTLOG
