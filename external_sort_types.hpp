@@ -43,7 +43,7 @@ struct SplitParams
     ErrParams err;
     struct {
         std::string ifile;
-        std::string oprefix;
+        std::string ofile;
         bool rm_input = false;
     } spl;
     struct {
@@ -60,6 +60,7 @@ struct MergeParams
         size_t nmerge    = 4;
         size_t stmblocks = 2;
         std::list<std::string> ifiles;
+        std::string tfile;
         std::string ofile;
         bool rm_input = true;
     } mrg;
@@ -79,7 +80,7 @@ struct GenerateParams
     MemParams mem;
     ErrParams err;
     struct {
-        size_t size = 0;
+        size_t fsize = 0;
         std::string ofile;
     } gen;
 };
@@ -124,7 +125,10 @@ struct ValueTraits
     using Generator = DefaultValueGenerator<ValueType>;
     using Value2Str = DefaultValue2Str<ValueType>;
 
-    static const size_t ValueSize = sizeof(ValueType);
+    // It can be extended to support non-POD types:
+    // static const size_t ValueSize = sizeof(ValueType);
+    // static inline int Serialize(...);
+    // static inline int Deserialize(...);
 };
 
 //! Stream set

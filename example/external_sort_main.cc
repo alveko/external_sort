@@ -20,10 +20,10 @@ using ValueType = uint32_t;
 
 const uint8_t ACT_NONE = 0x00;
 const uint8_t ACT_ALL = 0xFF;
-const uint8_t ACT_GEN = 1 << 0;
-const uint8_t ACT_SRT = 1 << 1;
-const uint8_t ACT_MRG = 1 << 2;
-const uint8_t ACT_CHK = 1 << 3;
+const uint8_t ACT_GEN = 1 << 0; // generate
+const uint8_t ACT_SPL = 1 << 1; // split
+const uint8_t ACT_MRG = 1 << 2; // merge
+const uint8_t ACT_CHK = 1 << 3; // check
 
 const char* DEF_MRG_RES_SFX = ".sorted";
 const char* DEF_GEN_OFILE = "generated";
@@ -56,7 +56,7 @@ void log_params(const po::variables_map& params,
             (!section.empty() &&
              section.compare(0, section.length(),
                              it->first, 0, section.length()) == 0)) {
-            LOG_LOW(("%-15s = %s") % it->first % any2str(it->second.value()));
+            LOG_LOW(("%-10s = %s") % it->first % any2str(it->second.value()));
         }
     }
 }
@@ -83,16 +83,16 @@ std::string replace_dirname(const std::string& pathname,
 std::list<std::string> act_split(const po::variables_map& vm)
 {
     LOG_IMP(("\n*** Phase 1: Splitting and Sorting"));
-    LOG_IMP(("Input file: %s") % vm["srt.ifile"].as<std::string>());
-    log_params(vm, "srt");
+    LOG_IMP(("Input file: %s") % vm["spl.ifile"].as<std::string>());
+    log_params(vm, "spl");
     TIMER("Done in %t sec CPU, %w sec real\n");
 
     external_sort::SplitParams params;
-    params.mem.size    = vm["msize"].as<size_t>();
-    params.mem.unit    = vm["memunit"].as<external_sort::MemUnit>();
-    params.mem.blocks  = vm["srt.blocks"].as<size_t>();
-    params.spl.ifile   = vm["srt.ifile"].as<std::string>();
-    params.spl.oprefix = vm["tfile"].as<std::string>();
+    params.mem.size   = vm["msize"].as<size_t>();
+    params.mem.unit   = vm["memunit"].as<external_sort::MemUnit>();
+    params.mem.blocks = vm["spl.blocks"].as<size_t>();
+    params.spl.ifile  = vm["spl.ifile"].as<std::string>();
+    params.spl.ofile  = vm["spl.ofile"].as<std::string>();
 
     external_sort::split<ValueType>(params);
     if (params.err) {
@@ -117,6 +117,7 @@ void act_merge(const po::variables_map& vm, std::list<std::string>& files)
     params.mrg.nmerge    = vm["mrg.nmerge"].as<size_t>();
     params.mrg.stmblocks = vm["mrg.blocks"].as<size_t>();
     params.mrg.ifiles    = files;
+    params.mrg.tfile     = vm["mrg.tfile"].as<std::string>();
     params.mrg.ofile     = vm["mrg.ofile"].as<std::string>();
     params.mrg.rm_input  = !vm["no_rm"].as<bool>();
 
@@ -141,7 +142,7 @@ void act_generate(const po::variables_map& vm)
     params.mem.unit   = vm["memunit"].as<external_sort::MemUnit>();
     params.mem.blocks = vm["gen.blocks"].as<size_t>();
     params.gen.ofile  = vm["gen.ofile"].as<std::string>();
-    params.gen.size   = vm["gen.fsize"].as<size_t>();
+    params.gen.fsize  = vm["gen.fsize"].as<size_t>();
 
     external_sort::generate<ValueType>(params);
     if (params.err) {
@@ -189,13 +190,13 @@ int main(int argc, char *argv[])
         ("act",
          po::value<std::string>()->default_value("all"),
          "Action to perform. Possible values:\n"
-         "<gen | srt | mrg | chk | all | ext>\n"
+         "<gen | spl | mrg | chk | all | srt>\n"
          "gen - Generates random data\n"
-         "srt - Splits and sorts the input\n"
+         "spl - Splits and sorts the input\n"
          "mrg - Merges the input\n"
          "chk - Checks if the input is sorted\n"
          "all - All of the above\n"
-         "ext = srt + mrg\n")
+         "srt = spl + mrg\n")
 
         ("msize",
          po::value<size_t>()->default_value(1),
@@ -215,8 +216,8 @@ int main(int argc, char *argv[])
          "Do not remove temporary files")
 
         ("tmpdir",
-         po::value<std::string>()->default_value("", "<same as input files>"),
-         "Directory for temporary files");
+         po::value<std::string>()->default_value("", "<same as i/o files>"),
+         "Directory for temporary files\n(relevant if act includes mrg)");
 
     po::options_description gen_desc("Options for act=gen (generate)");
     gen_desc.add_options()
@@ -233,14 +234,22 @@ int main(int argc, char *argv[])
          po::value<size_t>()->default_value(2),
          "Number of blocks in memory");
 
-    po::options_description srt_desc(
-        "Options for act=srt (phase 1: split and sort)");
-    srt_desc.add_options()
+    po::options_description spl_desc(
+        "Options for act=spl (phase 1: split and sort)");
+    spl_desc.add_options()
         ("srt.ifile",
+         po::value<std::string>()->default_value(""),
+         "Same as --spl.ifile")
+
+        ("spl.ifile",
          po::value<std::string>()->default_value("<gen.ofile>"),
          "Input file")
 
-        ("srt.blocks",
+        ("spl.ofile",
+         po::value<std::string>()->default_value("<spl.ifile>"),
+         "Output file prefix")
+
+        ("spl.blocks",
          po::value<size_t>()->default_value(2),
          "Number of blocks in memory");
 
@@ -254,7 +263,7 @@ int main(int argc, char *argv[])
          "i.e. sorted splits, is passed over from phase 1)")
 
         ("mrg.ofile",
-         po::value<std::string>()->default_value(std::string("<srt.ifile>") +
+         po::value<std::string>()->default_value(std::string("<spl.ifile>") +
                                                  DEF_MRG_RES_SFX),
          "Output file (required if act=mrg)")
 
@@ -280,8 +289,8 @@ int main(int argc, char *argv[])
          po::value<size_t>()->default_value(2),
          "       Number of blocks in memory");
 
-    srt_desc.add(mrg_desc);
-    gen_desc.add(srt_desc);
+    spl_desc.add(mrg_desc);
+    gen_desc.add(spl_desc);
     desc.add(gen_desc);
     desc.add(chk_desc);
 
@@ -346,14 +355,14 @@ int main(int argc, char *argv[])
         act = ACT_ALL;
     } else if (action == "gen") {
         act = ACT_GEN;
-    } else if (action == "srt") {
-        act = ACT_SRT;
+    } else if (action == "spl") {
+        act = ACT_SPL;
     } else if (action == "mrg") {
         act = ACT_MRG;
     } else if (action == "chk") {
         act = ACT_CHK;
-    } else if (action == "ext") {
-        act = ACT_SRT | ACT_MRG;
+    } else if (action == "srt") {
+        act = ACT_SPL | ACT_MRG;
     } else {
         LOG_INF(("Unknown action: %s") % action);
         std::cout << desc << std::endl;
@@ -363,11 +372,16 @@ int main(int argc, char *argv[])
     std::list<std::string> files;
 
     // adjust filename variables according to the provided options
-    if (vm["srt.ifile"].defaulted()) {
-        mr["srt.ifile"].value() = mr["gen.ofile"].value();
+    if (!vm["srt.ifile"].defaulted()) {
+        mr["spl.ifile"].value() = mr["srt.ifile"].value();
+    } else if (vm["spl.ifile"].defaulted()) {
+        mr["spl.ifile"].value() = mr["gen.ofile"].value();
     }
-    if (!(act & ACT_SRT) && (act & ACT_MRG)) {
-        // no split/sort phase, only the merge phase
+    if (vm["spl.ofile"].defaulted()) {
+        mr["spl.ofile"].value() = mr["spl.ifile"].value();
+    }
+    if (!(act & ACT_SPL) && (act & ACT_MRG)) {
+        // no split/sort phase, but only the merge phase
         // check for mandatory parameters
         for (auto param : {"mrg.ifiles", "mrg.ofile"}){
             if (vm[param].defaulted()) {
@@ -384,17 +398,23 @@ int main(int argc, char *argv[])
         }
     }
     if (vm["mrg.ofile"].defaulted()) {
-        mr["mrg.ofile"].value() = mr["srt.ifile"].value();
+        mr["mrg.ofile"].value() = mr["spl.ifile"].value();
         mr["mrg.ofile"].as<std::string>() += DEF_MRG_RES_SFX;
     }
     if (vm["chk.ifile"].defaulted()) {
         mr["chk.ifile"].value() = mr["mrg.ofile"].value();
     }
 
-    // make a prefix for temporary files
-    vm.insert(std::make_pair("tfile", po::variable_value(std::string(), false)));
-    mr["tfile"].as<std::string>() = replace_dirname(
-        vm["mrg.ofile"].defaulted() ? vm["srt.ifile"].as<std::string>()
+    // prefix for temp splits (in case of merge, use tmpdir, if given)
+    if (act & ACT_MRG) {
+        mr["spl.ofile"].as<std::string>() = replace_dirname(
+            vm["spl.ifile"].as<std::string>(), vm["tmpdir"].as<std::string>());
+    }
+    // prefix for temp merges
+    vm.insert(std::make_pair("mrg.tfile",
+                             po::variable_value(std::string(), false)));
+    mr["mrg.tfile"].as<std::string>() = replace_dirname(
+        vm["mrg.ofile"].defaulted() ? vm["spl.ifile"].as<std::string>()
                                     : vm["mrg.ofile"].as<std::string>(),
         vm["tmpdir"].as<std::string>());
 
@@ -404,7 +424,7 @@ int main(int argc, char *argv[])
     if (act & ACT_GEN) {
         act_generate(vm);
     }
-    if (act & ACT_SRT) {
+    if (act & ACT_SPL) {
         files = act_split(vm);
     }
     if (act & ACT_MRG) {

@@ -63,9 +63,8 @@ BlockMemoryPolicy<Block>::BlockPool::BlockPool(size_t memsize,
     TRACEX(("new block pool: memsize %d, memblocks %d")
            % memsize % memblocks);
 
-    size_t block_size = memsize /
-                        (sizeof(typename BlockTraits<Block>::ValueType)) /
-                        memblocks;
+    size_t block_size = memsize / memblocks /
+                        (sizeof(typename BlockTraits<Block>::ValueType));
 
     // pre-allocate a pool of blocks
     while (pool_.size() < blocks_) {
@@ -90,6 +89,7 @@ BlockMemoryPolicy<Block>::BlockPool::~BlockPool()
         BlockTraits<Block>::DeletePtr(block);
         pool_.pop();
     }
+    assert(blocks_allocated_ == 0);
 }
 
 template <typename Block>

@@ -12,7 +12,7 @@
 
 namespace external_sort {
 
-const char* DEF_SRT_TMP_SFX = "split";
+const char* DEF_SPL_TMP_SFX = "split";
 const char* DEF_MRG_TMP_SFX = "merge";
 
 /// ----------------------------------------------------------------------------
@@ -62,6 +62,7 @@ sort_and_write(typename Types<ValueType>::BlockPtr block,
 /// ----------------------------------------------------------------------------
 /// main external sorting functions
 
+//! External Split
 template <typename ValueType>
 void split(SplitParams& params)
 {
@@ -90,7 +91,7 @@ void split(SplitParams& params)
         auto ostream = std::make_shared<typename Types<ValueType>::OStream>();
         ostream->set_mem_pool(mem_pool);
         ostream->set_output_filename(
-            make_tmp_filename(params.spl.oprefix, DEF_SRT_TMP_SFX, ++file_cnt));
+            make_tmp_filename(params.spl.ofile, DEF_SPL_TMP_SFX, ++file_cnt));
 
         // asynchronously sort the block and write it to the output stream
         splits.Async(&sort_and_write<ValueType>,
@@ -106,6 +107,7 @@ void split(SplitParams& params)
     istream->Close();
 }
 
+//! External Merge
 template <typename ValueType>
 void merge(MergeParams& params)
 {
@@ -114,7 +116,12 @@ void merge(MergeParams& params)
 
     aux::AsyncFuncs<typename Types<ValueType>::OStreamPtr> merges;
 
-    // Merge files. Stop when one file left and no ongoing merges
+    size_t mem_merge = memsize_in_bytes(params.mem.size, params.mem.unit) /
+                       params.mrg.merges;
+    size_t mem_ostream = mem_merge / 2;
+    size_t mem_istream = mem_merge - mem_ostream;
+
+    // Merge files. Stop when only one file left and no ongoing merges
     auto files = params.mrg.ifiles;
     while (!(files.size() == 1 && merges.Empty())) {
         LOG_INF(("* files left to merge %d") % files.size());
@@ -122,14 +129,11 @@ void merge(MergeParams& params)
         // create a set of input streams with next nmerge files from the queue
         std::unordered_set<typename Types<ValueType>::IStreamPtr> istreams;
         while (istreams.size() < params.mrg.nmerge && !files.empty()) {
-
             // create input stream
             auto is = std::make_shared<typename Types<ValueType>::IStream>();
-            is->set_mem_pool(memsize_in_bytes(params.mem.size, params.mem.unit),
-                             params.mrg.stmblocks);
+            is->set_mem_pool(mem_istream, params.mrg.stmblocks);
             is->set_input_filename(files.front());
             is->set_input_rm_file(params.mrg.rm_input);
-
             // add to the set
             istreams.insert(is);
             files.pop_front();
@@ -137,11 +141,9 @@ void merge(MergeParams& params)
 
         // create an output stream
         auto ostream = std::make_shared<typename Types<ValueType>::OStream>();
-        ostream->set_mem_pool(memsize_in_bytes(params.mem.size,
-                                               params.mem.unit),
-                              params.mrg.stmblocks);
+        ostream->set_mem_pool(mem_ostream, params.mrg.stmblocks);
         ostream->set_output_filename(
-            make_tmp_filename(params.mrg.ofile, DEF_MRG_TMP_SFX, ++file_cnt));
+            make_tmp_filename(params.mrg.tfile, DEF_MRG_TMP_SFX, ++file_cnt));
 
         // asynchronously merge and write to the output stream
         merges.Async(&merge_streams<typename Types<ValueType>::IStreamPtr,
@@ -164,13 +166,25 @@ void merge(MergeParams& params)
     if (rename(files.front().c_str(), params.mrg.ofile.c_str()) == 0) {
         LOG_IMP(("Output file: %s") % params.mrg.ofile);
     } else {
-        LOG_ERR(("Cannot rename %s to %s") % files.front() % params.mrg.ofile);
         params.err.none = false;
         params.err.stream << "Cannot rename " << files.front()
                           << " to " << params.mrg.ofile;
     }
 }
 
+//! External Sort (= Split + Merge)
+template <typename ValueType>
+void sort(SplitParams& sp, MergeParams& mp)
+{
+    split<ValueType>(sp);
+
+    if (sp.err.none) {
+        mp.mrg.ifiles = sp.spl.ofiles;
+        merge<ValueType>(mp);
+    }
+}
+
+//! External Check
 template <typename ValueType>
 bool check(CheckParams& params)
 {
@@ -227,13 +241,14 @@ bool check(CheckParams& params)
     return bad == 0;
 }
 
+//! External Generate
 template <typename ValueType>
 void generate(const GenerateParams& params)
 {
     TRACE_FUNC();
 
     auto generator = typename Types<ValueType>::Generator();
-    size_t gen_elements = memsize_in_bytes(params.gen.size, params.mem.unit) /
+    size_t gen_elements = memsize_in_bytes(params.gen.fsize, params.mem.unit) /
                           sizeof(ValueType);
 
     auto ostream = std::make_shared<typename Types<ValueType>::OStream>();
