@@ -5,8 +5,8 @@
 #include <memory>
 #include <list>
 
-#include "external_sort_types.hpp"
 #include "external_sort_nolog.hpp"
+#include "external_sort_types.hpp"
 #include "external_sort_merge.hpp"
 #include "async_funcs.hpp"
 
@@ -53,9 +53,7 @@ sort_and_write(typename Types<ValueType>::BlockPtr block,
           Types<ValueType>::BlockTraits::RawPtr(block));
 
     // write the block to the output stream
-    ostream->Open();
     ostream->WriteBlock(block);
-    ostream->Close();
     return ostream;
 }
 
@@ -82,6 +80,11 @@ void split(SplitParams& params)
     istream->set_input_rm_file(params.spl.rm_input);
     istream->Open();
 
+    if (params.spl.ofile.empty()) {
+        // if no output prefix given, use input filename as a prefix
+        params.spl.ofile = params.spl.ifile;
+    }
+
     while (!istream->Empty()) {
         // read a block from the input stream
         auto block = istream->FrontBlock();
@@ -92,6 +95,7 @@ void split(SplitParams& params)
         ostream->set_mem_pool(mem_pool);
         ostream->set_output_filename(
             make_tmp_filename(params.spl.ofile, DEF_SPL_TMP_SFX, ++file_cnt));
+        ostream->Open();
 
         // asynchronously sort the block and write it to the output stream
         splits.Async(&sort_and_write<ValueType>,
@@ -101,7 +105,10 @@ void split(SplitParams& params)
         while ((splits.Ready() > 0) || (splits.Running() && istream->Empty())) {
             // wait for any split and get its output filename
             auto ostream_ready = splits.GetAny();
-            params.out.ofiles.push_back(ostream_ready->output_filename());
+            if (ostream_ready) {
+                ostream_ready->Close();
+                params.out.ofiles.push_back(ostream_ready->output_filename());
+            }
         }
     }
     istream->Close();
@@ -121,14 +128,14 @@ void merge(MergeParams& params)
     size_t mem_ostream = mem_merge / 2;
     size_t mem_istream = mem_merge - mem_ostream;
 
-    // Merge files. Stop when only one file left and no ongoing merges
+    // Merge files while something to merge or there are ongoing merges
     auto files = params.mrg.ifiles;
-    while (!(files.size() == 1 && merges.Empty())) {
+    while (files.size() > 1 || !merges.Empty()) {
         LOG_INF(("* files left to merge %d") % files.size());
 
-        // create a set of input streams with next nmerge files from the queue
+        // create a set of input streams with next kmerge files from the queue
         std::unordered_set<typename Types<ValueType>::IStreamPtr> istreams;
-        while (istreams.size() < params.mrg.nmerge && !files.empty()) {
+        while (istreams.size() < params.mrg.kmerge && !files.empty()) {
             // create input stream
             auto is = std::make_shared<typename Types<ValueType>::IStream>();
             is->set_mem_pool(mem_istream, params.mrg.stmblocks);
@@ -156,19 +163,26 @@ void merge(MergeParams& params)
         //    currently available. So wait for more files.
         // 2) There are completed (ready) merges; results shall be collected
         // 3) There are simple too many already ongoing merges
-        while ((files.size() < params.mrg.nmerge && !merges.Empty()) ||
+        while ((files.size() < params.mrg.kmerge && !merges.Empty()) ||
                (merges.Ready() > 0) || (merges.Running() >= params.mrg.merges)) {
             auto ostream_ready = merges.GetAny();
-            files.push_back(ostream_ready->output_filename());
+            if (ostream_ready) {
+                files.push_back(ostream_ready->output_filename());
+            }
         }
     }
 
-    if (rename(files.front().c_str(), params.mrg.ofile.c_str()) == 0) {
-        LOG_IMP(("Output file: %s") % params.mrg.ofile);
+    if (files.size()) {
+        if (rename(files.front().c_str(), params.mrg.ofile.c_str()) == 0) {
+            LOG_IMP(("Output file: %s") % params.mrg.ofile);
+        } else {
+            params.err.none = false;
+            params.err.stream << "Cannot rename " << files.front()
+                              << " to " << params.mrg.ofile;
+        }
     } else {
         params.err.none = false;
-        params.err.stream << "Cannot rename " << files.front()
-                          << " to " << params.mrg.ofile;
+        params.err.stream << "Merge failed. No input";
     }
 }
 
@@ -179,7 +193,7 @@ void sort(SplitParams& sp, MergeParams& mp)
     split<ValueType>(sp);
 
     if (sp.err.none) {
-        mp.mrg.ifiles = sp.spl.ofiles;
+        mp.mrg.ifiles = sp.out.ofiles;
         merge<ValueType>(mp);
     }
 }

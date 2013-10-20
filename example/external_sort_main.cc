@@ -113,9 +113,9 @@ void act_merge(const po::variables_map& vm, std::list<std::string>& files)
     external_sort::MergeParams params;
     params.mem.size      = vm["msize"].as<size_t>();
     params.mem.unit      = vm["memunit"].as<external_sort::MemUnit>();
-    params.mrg.merges    = vm["mrg.tasks"].as<size_t>();
-    params.mrg.nmerge    = vm["mrg.nmerge"].as<size_t>();
-    params.mrg.stmblocks = vm["mrg.blocks"].as<size_t>();
+    params.mrg.merges    = vm["mrg.merges"].as<size_t>();
+    params.mrg.kmerge    = vm["mrg.kmerge"].as<size_t>();
+    params.mrg.stmblocks = vm["mrg.stmblocks"].as<size_t>();
     params.mrg.ifiles    = files;
     params.mrg.tfile     = vm["mrg.tfile"].as<std::string>();
     params.mrg.ofile     = vm["mrg.ofile"].as<std::string>();
@@ -267,15 +267,15 @@ int main(int argc, char *argv[])
                                                  DEF_MRG_RES_SFX),
          "Output file (required if act=mrg)")
 
-        ("mrg.tasks",
+        ("mrg.merges",
          po::value<size_t>()->default_value(4),
-         "Number of simultaneous merge tasks")
+         "Number of simultaneous merge merges")
 
-        ("mrg.nmerge",
+        ("mrg.kmerge",
          po::value<size_t>()->default_value(4),
          "Number of streams merged at a time")
 
-        ("mrg.blocks",
+        ("mrg.stmblocks",
          po::value<size_t>()->default_value(2),
          "Number of memory blocks per stream");
 

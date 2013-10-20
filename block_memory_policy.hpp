@@ -5,6 +5,7 @@
 #include <mutex>
 #include <atomic>
 #include <stack>
+#include <cassert>
 
 #include "block_types.hpp"
 

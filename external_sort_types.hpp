@@ -21,15 +21,15 @@ enum MemUnit { MB, KB, B };
 
 struct MemParams
 {
-    size_t  size   = 10;
-    MemUnit unit   = MB;
-    size_t  blocks = 2;
+    size_t  size   = 10;                // memory size
+    MemUnit unit   = MB;                // memory unit
+    size_t  blocks = 2;                 // number of blocks memory is divided by
 };
 
 struct ErrParams
 {
-    bool none = true;
-    std::ostringstream stream;
+    bool none = true;                   // error status
+    std::ostringstream stream;          // error stream
 
     operator bool () const { return !none; }
     operator std::string () const { return stream.str(); }
@@ -39,49 +39,49 @@ struct ErrParams
 
 struct SplitParams
 {
-    MemParams mem;
-    ErrParams err;
+    MemParams mem;                      // memory params
+    ErrParams err;                      // error params
     struct {
-        std::string ifile;
-        std::string ofile;
-        bool rm_input = false;
+        std::string ifile;              // input file to split
+        std::string ofile;              // output file prefix (prefix of splits)
+        bool rm_input = false;          // ifile should be removed when done?
     } spl;
     struct {
-        std::list<std::string> ofiles;
+        std::list<std::string> ofiles;  // list of output files (splits)
     } out;
 };
 
 struct MergeParams
 {
-    MemParams mem;
-    ErrParams err;
+    MemParams mem;                      // memory params
+    ErrParams err;                      // error params
     struct {
-        size_t merges    = 4;
-        size_t nmerge    = 4;
-        size_t stmblocks = 2;
-        std::list<std::string> ifiles;
-        std::string tfile;
-        std::string ofile;
-        bool rm_input = true;
+        size_t merges    = 4;           // number of simultaneous merges
+        size_t kmerge    = 4;           // number of streams to merge at a time
+        size_t stmblocks = 2;           // number of memory blocks per stream
+        std::list<std::string> ifiles;  // list of input files to merge
+        std::string tfile;              // prefix for temporary files
+        std::string ofile;              // output file (the merge result)
+        bool rm_input = true;           // ifile should be removed when done?
     } mrg;
 };
 
 struct CheckParams
 {
-    MemParams mem;
-    ErrParams err;
+    MemParams mem;                      // memory params
+    ErrParams err;                      // error params
     struct {
-        std::string ifile;
+        std::string ifile;              // input file to check it it's sorted
     } chk;
 };
 
 struct GenerateParams
 {
-    MemParams mem;
-    ErrParams err;
+    MemParams mem;                      // memory params
+    ErrParams err;                      // error params
     struct {
-        size_t fsize = 0;
-        std::string ofile;
+        size_t fsize = 0;               // file size to generate (in mem.units)
+        std::string ofile;              // output file
     } gen;
 };
 

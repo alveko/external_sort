@@ -81,6 +81,9 @@ void BlockFileWritePolicy<Block>::FileOpen()
     LOG_INF(("opening file w %s") % output_filename_);
     TRACEX(("output file %s") % output_filename_);
     ofs_.open(output_filename_, std::ofstream::out | std::ofstream::binary);
+    if (!ofs_) {
+        LOG_ERR(("Failed to open output file: %s") % output_filename_);
+    }
 }
 
 template <typename Block>
@@ -94,7 +97,9 @@ void BlockFileWritePolicy<Block>::FileWrite(const BlockPtr& block)
 template <typename Block>
 void BlockFileWritePolicy<Block>::FileClose()
 {
-    ofs_.close();
+    if (ofs_.is_open()) {
+        ofs_.close();
+    }
 }
 
 } // namespace block

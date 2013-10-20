@@ -185,26 +185,29 @@ OutputStreamPtr merge_streams(StreamSet<InputStreamPtr> sin,
             sinp.insert(s.get());
         }
     }
-    sout->Open();
 
-    if (sinp.size() > 4) {
-        merge_nstreams(sinp, soutp, comp);
-    } else if (sinp.size() == 4) {
-        merge_4streams(sinp, soutp, comp);
-    } else if (sinp.size() == 3) {
-        merge_3streams(sinp, soutp, comp);
-    } else if (sinp.size() == 2) {
-        merge_2streams(sinp, soutp, comp);
-    } else if (sinp.size() == 1) {
-        copy_stream(*sinp.begin(), soutp);
+    if (sinp.size() > 0) {
+        sout->Open();
+        if (sinp.size() > 4) {
+            merge_nstreams(sinp, soutp, comp);
+        } else if (sinp.size() == 4) {
+            merge_4streams(sinp, soutp, comp);
+        } else if (sinp.size() == 3) {
+            merge_3streams(sinp, soutp, comp);
+        } else if (sinp.size() == 2) {
+            merge_2streams(sinp, soutp, comp);
+        } else if (sinp.size() == 1) {
+            copy_stream(*sinp.begin(), soutp);
+        }
+        sout->Close();
     } else {
-        LOG_ERR(("Unexpected number of streams to merge: %d") % sin.size());
+        LOG_ERR(("No input streams to merge!"));
+        sout.reset();
     }
 
     for (const auto& s : sin) {
         s->Close();
     }
-    sout->Close();
     return sout;
 }
 

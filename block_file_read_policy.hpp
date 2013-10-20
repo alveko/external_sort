@@ -109,10 +109,12 @@ void BlockFileReadPolicy<Block>::FileRead(BlockPtr& block)
 template <typename Block>
 void BlockFileReadPolicy<Block>::FileClose()
 {
-    ifs_.close();
-    if (input_rm_file_) {
-        if (remove(input_filename_.c_str()) != 0) {
-            LOG_ERR(("Failed to remove file: %s") % input_filename_);
+    if (ifs_.is_open()) {
+        ifs_.close();
+        if (input_rm_file_) {
+            if (remove(input_filename_.c_str()) != 0) {
+                LOG_ERR(("Failed to remove file: %s") % input_filename_);
+            }
         }
     }
 }

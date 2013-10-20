@@ -1,16 +1,13 @@
 CXX	?= g++
 
-CFLAGS	= -std=c++11 -c -Wall -pthread -DBOOST_LOG_DYN_LINK
+CFLAGS	= -std=c++11 -c -Wall -pthread
 INCL	= -I.. -I./logging -I/usr/local/include
 LDFLAGS	= \
 	-pthread \
 	-L/usr/local/lib \
 	-lboost_program_options \
 	-lboost_timer \
-	-lboost_system \
-	-lboost_log \
-	-lboost_log_setup \
-	-lboost_thread
+	-lboost_system
 
 EXE	= external_sort
 SRC	= external_sort_main.cc logging/logging.cc
@@ -22,7 +19,8 @@ OBJ	= $(SRC:.cc=.o)
 all:	CFLAGS += -O3
 all:	$(EXE)
 
-debug:	CFLAGS += -g -DDEBUG -DBOOSTLOG
+debug:	CFLAGS += -g -DDEBUG -DBOOSTLOG -DBOOST_LOG_DYN_LINK
+debug:	LDFLAGS += -lboost_log 	-lboost_log_setup -lboost_thread
 debug:	$(EXE)
 
 $(EXE): $(OBJ)
