@@ -7,13 +7,9 @@
 
 #include "logging.hpp"
 #include "external_sort.hpp"
+#include "external_sort_custom.hpp"
 
 namespace po = boost::program_options;
-
-/// ----------------------------------------------------------------------------
-/// types
-
-using ValueType = uint32_t;
 
 /// ----------------------------------------------------------------------------
 /// consts

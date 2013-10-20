@@ -1,3 +1,6 @@
+#ifndef EXTERNAL_SORT_HPP
+#define EXTERNAL_SORT_HPP
+
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -203,7 +206,8 @@ template <typename ValueType>
 bool check(CheckParams& params)
 {
     TRACE_FUNC();
-    auto comp = typename Types<ValueType>::Comparator();
+    auto comp = typename ValueTraits<ValueType>::Comparator();
+    auto vtos = typename ValueTraits<ValueType>::Value2Str();
 
     auto istream = std::make_shared<typename Types<ValueType>::IStream>();
     istream->set_mem_pool(memsize_in_bytes(params.mem.size, params.mem.unit),
@@ -226,8 +230,8 @@ bool check(CheckParams& params)
             if (comp(vcurr, vprev)) {
                 if (bad < 10) {
                     params.err.stream << "Out of order! cnt = " << cnt
-                                      << " prev = " << vprev
-                                      << " curr = " << vcurr << "\n";
+                                      << " prev = " << vtos(vprev)
+                                      << " curr = " << vtos(vcurr) << "\n";
                 }
                 bad++;
             }
@@ -245,9 +249,10 @@ bool check(CheckParams& params)
             params.err.none = false;
             params.err.stream << "Total elements out of order: " << bad << "\n";
         }
-        params.err.stream << "\tmin = " << vmin << ", max = " << vmax << "\n";
-        params.err.stream << "\tfirst = " << vfirst << ", last = " << vprev
-                          << "\n";
+        params.err.stream << "\tmin = " << vtos(vmin)
+                          << ", max = " << vtos(vmax) << "\n";
+        params.err.stream << "\tfirst = " << vtos(vfirst)
+                          << ", last = " << vtos(vprev) << "\n";
     }
     params.err.stream << "\tsorted = " << ((bad) ? "false" : "true")
                       << ", elems = " << cnt << ", bad = " << bad;
@@ -261,7 +266,7 @@ void generate(const GenerateParams& params)
 {
     TRACE_FUNC();
 
-    auto generator = typename Types<ValueType>::Generator();
+    auto generator = typename ValueTraits<ValueType>::Generator();
     size_t gen_elements = memsize_in_bytes(params.gen.fsize, params.mem.unit) /
                           sizeof(ValueType);
 
@@ -279,3 +284,5 @@ void generate(const GenerateParams& params)
 }
 
 } // namespace external_sort
+
+#endif

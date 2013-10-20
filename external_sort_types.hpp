@@ -141,7 +141,6 @@ struct Types
 {
     // Value trait shortcuts
     using Comparator = typename ValueTraits<ValueType>::Comparator;
-    using Generator = typename ValueTraits<ValueType>::Generator;
 
     // Block Types
     using Block = block::VectorBlock<ValueType>;
