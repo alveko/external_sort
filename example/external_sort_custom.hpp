@@ -4,10 +4,8 @@
 /// ----------------------------------------------------------------------------
 /// custom type to run external sort for
 
-using ValueType = uint32_t;
-
 // Below is an example how to define and use external_sort with custom type!
-/*
+
 struct CustomRecord
 {
     uint32_t id;
@@ -65,8 +63,5 @@ struct ValueTraits<CustomRecord>
     // using Generator = DefaultValueGenerator<CustomRecord>;
 };
 }
-
-using ValueType = CustomRecord;
-*/
 
 #endif

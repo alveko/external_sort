@@ -12,6 +12,14 @@
 namespace po = boost::program_options;
 
 /// ----------------------------------------------------------------------------
+/// types
+
+using ValueType = uint32_t;
+
+// external sort also work with custom types
+// using ValueType = CustomRecord;
+
+/// ----------------------------------------------------------------------------
 /// consts
 
 const uint8_t ACT_NONE = 0x00;
