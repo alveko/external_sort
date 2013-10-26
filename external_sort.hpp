@@ -152,8 +152,9 @@ void merge(MergeParams& params)
         // create an output stream
         auto ostream = std::make_shared<typename Types<ValueType>::OStream>();
         ostream->set_mem_pool(mem_ostream, params.mrg.stmblocks);
-        ostream->set_output_filename(
-            make_tmp_filename(params.mrg.tfile, DEF_MRG_TMP_SFX, ++file_cnt));
+        ostream->set_output_filename(make_tmp_filename(
+            (params.mrg.tfile.size() ? params.mrg.tfile : params.mrg.ofile),
+            DEF_MRG_TMP_SFX, ++file_cnt));
 
         // asynchronously merge and write to the output stream
         merges.Async(&merge_streams<typename Types<ValueType>::IStreamPtr,
