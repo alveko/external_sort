@@ -7,7 +7,7 @@ The library works with fundamental data types as well as with user defined custo
 
 ### External sort algorithm
 
-#### Phase 1: slit and sort
+#### Phase 1: split and sort
 
 A big input file is consequently read in pieces (aka blocks or chunks) small enough to fit into the memory. Each piece is sorted and written to a separate output file (split).
 
