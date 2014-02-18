@@ -131,7 +131,7 @@ void merge(MergeParams& params)
     size_t mem_ostream = mem_merge / 2;
     size_t mem_istream = mem_merge - mem_ostream;
 
-    // Merge files while something to merge or there are ongoing merges
+    // Merge files while there is something to merge or there are ongoing merges
     auto files = params.mrg.ifiles;
     while (files.size() > 1 || !merges.Empty()) {
         LOG_INF(("* files left to merge %d") % files.size());
@@ -166,7 +166,7 @@ void merge(MergeParams& params)
         //    In other words, more files can be merged at once than
         //    currently available. So wait for more files.
         // 2) There are completed (ready) merges; results shall be collected
-        // 3) There are simple too many already ongoing merges
+        // 3) There are simply too many already ongoing merges
         while ((files.size() < params.mrg.kmerge && !merges.Empty()) ||
                (merges.Ready() > 0) || (merges.Running() >= params.mrg.merges)) {
             auto ostream_ready = merges.GetAny();
