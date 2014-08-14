@@ -3,13 +3,13 @@ external_sort
 
 This is a header-only, multithreaded, policy-based implementation of the [external sort](http://en.wikipedia.org/wiki/External_sorting) in C++11.
 
-The library works with fundamental data types as well as with user defined custom data types.
+The library works with the basic data types as well as with user defined custom data types.
 
 ### External sort algorithm
 
 #### Phase 1: split and sort
 
-A big input file is consequently read in pieces (aka blocks or chunks) small enough to fit into the memory. Each piece is sorted and written to a separate output file (split).
+A big input file is consequently read in pieces (aka blocks or chunks) small enough to fit into the memory. Each piece is sorted and stored to a separate output file (split).
 
 There is one thread reading data from the input file. For each block, read but not yet sorted, a new worker thread is spawned to sort it and write the block to the output file.
 
@@ -31,7 +31,7 @@ Example:
 
 The input files (sorted splits) are merged repeatedly until only one file left.
 
-There can be more than one ongoing merge at a time. Each merge takes k input files (streams) and merges them into one output file (stream). Each input/output stream has its own thread reading/writing data asynchronously. Hence, each k-merge consists of: k threads reading the data (k input streams), 1 thread performing the actual merge and 1 thread writing the data (the output stream).
+There can be more than one ongoing merge at a time. Each merge takes k input files (streams) and merges them into one output file (stream). Each input or output stream has its own thread reading or writing data asynchronously. Thus, each k-merge has k+2 threads: k threads reading data (k input streams), 1 thread performing the actual merge and 1 thread writing data (the output stream).
 
 Each stream (input or output) has a queue and at least two blocks of data. Two blocks per stream make it possible to perform read/write and merge in two threads in parallel (each thread has its own block to work with). Reasonably, there shall be no need in more than two blocks, since either reading/writing or merging is supposed to be consistently slower than the other.
 
